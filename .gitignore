@@ -1,3 +1,4 @@
+
 .venv/
 build/
 dist/
@@ -6,3 +7,4 @@ __pycache__/
 tracker.log
 config.json
 .update-check.json
+tracker_queue.sqlite3

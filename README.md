@@ -116,6 +116,7 @@ Run on a Windows machine:
 This will:
 
 - create `.venv`
+- recreate a broken `.venv` automatically if needed
 - install runtime and build dependencies
 - build `dist\cclms-tracker.exe`
 
@@ -187,20 +188,47 @@ By default this installs:
 
 If `config.json` is missing or incomplete, the installer will open the setup popup automatically before installing the service.
 
+## Recommended User Install
+
+For normal users, do not run `python agent.py`.
+
+Use this flow instead:
+
+1. Build the EXE once with `.\build_exe.ps1`
+2. Put the final `dist\cclms-tracker.exe` and `config.json` on the laptop
+3. Open PowerShell as Administrator
+4. Run `.\install_service.ps1`
+
+This removes Python, `pip`, and `.venv` from the end-user path.
+
+If you rerun `.\install_service.ps1`, it now refreshes an existing scheduled task or NSSM service, stops the old instance, and starts the latest one again.
+If `device_id` is missing, the installer now writes the Windows computer name automatically.
+
+You can check whether it is installed and running with:
+
+```powershell
+.\check_tracker_status.ps1
+```
+
 ## Development Run
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-python agent.py
+.\run_agent.ps1
 ```
 
 Or with a specific config file:
 
 ```powershell
-python agent.py config.json
+.\run_agent.ps1 .\config.json
 ```
+
+`run_agent.ps1` will:
+
+- create `.venv` if missing
+- repair a broken virtual environment
+- bootstrap `pip` if it is missing
+- install dependencies from `requirements.txt`
+- run the tracker with the selected config file
 
 ## Tracker Device Mapping
 

@@ -1,4 +1,7 @@
 {
+  "site_url": "https://your-crm.example.com",
+  "api_key": "your-api-key",
+  "api_secret": "your-api-secret",
   "device_id": "WIN-LAPTOP-01",
   "github_repo": "your-org/windows_tracker_client",
   "github_release_asset": "cclms-tracker-windows-x64.zip",
