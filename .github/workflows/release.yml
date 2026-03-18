@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r .\requirements.txt -r .\requirements-build.txt
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          pyinstaller --clean --noconfirm .\tracker.spec
+
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .\release | Out-Null
+          New-Item -ItemType Directory -Force -Path .\release\dist | Out-Null
+          Copy-Item .\dist\cclms-tracker.exe .\release\dist\
+          Copy-Item .\install_service.ps1 .\release\
+          Copy-Item .\install_service.bat .\release\
+          Copy-Item .\setup_config.ps1 .\release\
+          Copy-Item .\config.example.json .\release\
+          Copy-Item .\embedded_defaults.py .\release\
+          Copy-Item .\version.py .\release\
+          Copy-Item .\README.md .\release\
+          Compress-Archive -Path .\release\* -DestinationPath .\dist\cclms-tracker-windows-x64.zip -Force
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            .\dist\cclms-tracker-windows-x64.zip
+            .\dist\cclms-tracker.exe

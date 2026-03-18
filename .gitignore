@@ -1,0 +1,8 @@
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+tracker.log
+config.json
+.update-check.json
