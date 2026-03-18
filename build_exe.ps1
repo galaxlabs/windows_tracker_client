@@ -3,43 +3,47 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $projectRoot
 
-if (-not (Test-Path ".venv")) {
-    py -m venv .venv
+. (Join-Path $projectRoot "bootstrap_env.ps1")
+
+function Stop-RunningTracker {
+    param([string]$TaskName = "CCLMS-Tracker")
+
+    $scheduledTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($scheduledTask) {
+        try {
+            Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
+
+    $service = Get-Service -Name $TaskName -ErrorAction SilentlyContinue
+    if ($service -and $service.Status -ne "Stopped") {
+        try {
+            Stop-Service -Name $TaskName -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
+
+    Get-Process "cclms-tracker", "python", "pythonw" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Path -like "$projectRoot*" -or $_.ProcessName -eq "cclms-tracker"
+        } |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+
+    Start-Sleep -Seconds 2
 }
 
-$venvPython = ".\.venv\Scripts\python.exe"
-$venvPyInstaller = ".\.venv\Scripts\pyinstaller.exe"
-$pythonCmd = $venvPython
-$pyInstallerCmd = $venvPyInstaller
-$useSystemPython = $false
+Stop-RunningTracker
 
-& $venvPython -m pip --version | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    $useSystemPython = $true
-}
+$envInfo = Initialize-TrackerVenv -ProjectRoot $projectRoot -RequirementsFiles @(
+    (Join-Path $projectRoot "requirements.txt"),
+    (Join-Path $projectRoot "requirements-build.txt")
+)
 
-if ($useSystemPython) {
-    Write-Host "Virtualenv pip is unavailable. Falling back to system Python for build dependencies."
-    & py -m pip install --upgrade pip
-    if ($LASTEXITCODE -ne 0) { throw "Failed to upgrade system pip" }
-    & py -m pip install -r .\requirements.txt -r .\requirements-build.txt
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install build dependencies with system Python" }
-    $pythonCmd = "py"
-    $pyInstallerCmd = "py"
-} else {
-    & $venvPython -m pip install --upgrade pip
-    if ($LASTEXITCODE -ne 0) { throw "Failed to upgrade virtualenv pip" }
-    & $venvPython -m pip install -r .\requirements.txt -r .\requirements-build.txt
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install build dependencies in virtualenv" }
-}
+$venvPython = $envInfo.PythonPath
 
-if ($useSystemPython) {
-    & $pyInstallerCmd -m PyInstaller --clean --noconfirm .\tracker.spec
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed with system Python" }
-} else {
-    & $pyInstallerCmd --clean --noconfirm .\tracker.spec
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed in virtualenv" }
-}
+& $venvPython -m PyInstaller --clean --noconfirm .\tracker.spec
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
 
 Write-Host ""
 Write-Host "Build complete."
