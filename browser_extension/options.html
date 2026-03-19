@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CCLMS Map Assistant</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      margin: 0;
+      background: #f6f7fb;
+      color: #1f2937;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+    h1 {
+      margin: 0 0 16px;
+      font-size: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d0d7e2;
+      border-radius: 10px;
+      box-sizing: border-box;
+    }
+    .row {
+      margin-bottom: 14px;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: #0f766e;
+      color: #fff;
+      padding: 12px 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .status {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #0f766e;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>CCLMS Map Assistant</h1>
+      <div class="grid">
+        <div class="row">
+          <label for="crmBaseUrl">CRM Base URL</label>
+          <input id="crmBaseUrl" placeholder="https://crm.example.com">
+        </div>
+        <div class="row">
+          <label for="authMode">Auth Mode</label>
+          <select id="authMode">
+            <option value="token">Token</option>
+            <option value="cookie">Cookie Session</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="apiToken">API Token</label>
+          <input id="apiToken" placeholder="api_key:api_secret or backend-issued token">
+        </div>
+        <div class="row">
+          <label for="deviceId">Device ID</label>
+          <input id="deviceId" placeholder="WIN-LAPTOP-01">
+        </div>
+        <div class="row">
+          <label for="employee">Employee</label>
+          <input id="employee" placeholder="EMP-0001">
+        </div>
+        <div class="row">
+          <label for="cacheTtlSeconds">Validation Cache TTL Seconds</label>
+          <input id="cacheTtlSeconds" type="number" min="30" step="30">
+        </div>
+      </div>
+      <div class="grid">
+        <div class="row">
+          <label><input id="mapsEnabled" type="checkbox"> Enable Google Maps helper</label>
+        </div>
+        <div class="row">
+          <label><input id="chatEnabled" type="checkbox"> Enable Google Chat notices</label>
+        </div>
+      </div>
+      <button id="saveButton">Save Settings</button>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

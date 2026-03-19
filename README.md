@@ -271,3 +271,34 @@ hostname
 - The EXE writes a simple local log file named `tracker.log` next to the executable.
 - If CRM provides notifications, the agent caches them locally in `notification_rules.json` and shows repeating Windows popups until CRM stops sending them.
 - If CRM enables map intelligence, the agent maintains a local scouting cache in `scouting_cache.sqlite3` for ZIP guidance, lead duplicate checks, competitor caching, and scoped sync.
+
+## Browser Extension
+
+This repo also contains a separate browser-side helper for Google Maps and optional Google Chat:
+
+- [browser_extension/README.md](/c:/Users/AQN/data/windows_tracker_client_clean/browser_extension/README.md)
+- [browser_extension/BROWSER_EXTENSION_BACKEND_CONTRACT.md](/c:/Users/AQN/data/windows_tracker_client_clean/browser_extension/BROWSER_EXTENSION_BACKEND_CONTRACT.md)
+
+This browser module is separate from the Windows tracker service. It is intended to:
+
+- read the currently opened Google Maps place
+- validate it with CRM
+- show lightweight duplicate / ZIP guidance
+- open a prefilled ATM Lead flow
+- upsert competitor kiosks
+
+## Backend Handoff
+
+Use:
+
+- [BACKEND_API_CONTRACT.md](/c:/Users/AQN/data/windows_tracker_client_clean/BACKEND_API_CONTRACT.md)
+- [BACKEND_AGENT_PROMPT.md](/c:/Users/AQN/data/windows_tracker_client_clean/BACKEND_AGENT_PROMPT.md)
+- [BACKEND_LOGIC_SPEC.md](/c:/Users/AQN/data/windows_tracker_client_clean/BACKEND_LOGIC_SPEC.md)
+- [browser_extension/BROWSER_EXTENSION_BACKEND_CONTRACT.md](/c:/Users/AQN/data/windows_tracker_client_clean/browser_extension/BROWSER_EXTENSION_BACKEND_CONTRACT.md)
+
+These documents describe the Frappe-side work needed for:
+
+- tracker device actions and health reporting
+- call metadata persistence
+- optional notifications, biometric sync, and map intelligence
+- Chrome extension validation, prefill, competitor upsert, and browser notifications

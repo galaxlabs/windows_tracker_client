@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "CCLMS Map Assistant",
+  "version": "0.1.0",
+  "description": "Lightweight Google Maps and Google Chat helper for CCLMS scouting workflows.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://www.google.com/maps/*",
+    "https://chat.google.com/*",
+    "https://crm.galaxylabs.online/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.google.com/maps/*"
+      ],
+      "css": [
+        "content/overlay.css"
+      ],
+      "js": [
+        "content/common.js",
+        "content/maps.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.google.com/*"
+      ],
+      "css": [
+        "content/overlay.css"
+      ],
+      "js": [
+        "content/common.js",
+        "content/chat.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "CCLMS Map Assistant",
+    "default_popup": "options.html"
+  }
+}
