@@ -1,3 +1,4 @@
+import ctypes
 import json
 import logging
 import os
@@ -28,6 +29,8 @@ from version import __version__
 EPOCH_OFFSET = 11644473600
 UPDATE_CHECK_FILE = ".update-check.json"
 QUEUE_DB_FILE = "tracker_queue.sqlite3"
+BIOMETRIC_SYNC_FILE = ".biometric-sync.json"
+NOTIFICATION_RUNTIME_FILE = ".notification-runtime.json"
 
 
 def _base_dir():
@@ -76,10 +79,21 @@ def _parse_version(value):
     return tuple(parts[:3])
 
 
+def _normalize_domain(value):
+    host = (value or "").strip().lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
 def chrome_time_to_datetime(value):
     if not value:
         return None
     return datetime.fromtimestamp((int(value) / 1000000) - EPOCH_OFFSET, tz=timezone.utc)
+
+
+class TrackerRestartRequested(Exception):
+    pass
 
 
 class TrackerAgent:
@@ -106,6 +120,15 @@ class TrackerAgent:
         self.active_call = None
         self.policy = {}
         self.current_version = __version__
+        self.productivity_rules = list(self.config.get("productivity_rules") or [])
+        self.device_actions_enabled = bool(self.config.get("device_actions_enabled", False))
+        self.last_device_action_poll = datetime.now(timezone.utc) - timedelta(seconds=int(self.config.get("device_actions_poll_seconds", 60)))
+        self.notifications_enabled = bool(self.config.get("notifications_enabled", False))
+        self.last_notification_poll = datetime.now(timezone.utc) - timedelta(seconds=int(self.config.get("notifications_poll_seconds", 60)))
+        self.notification_rules = []
+        self.biometric_sync_enabled = bool(self.config.get("biometric_sync_enabled", False))
+        self.biometric_device = dict(self.config.get("biometric_device") or {})
+        self.last_biometric_sync = datetime.now(timezone.utc) - timedelta(minutes=int(self.config.get("biometric_sync_interval_minutes", 15)))
 
     def _setup_logging(self):
         log_path = self.base_dir / (self.config.get("log_file") or "tracker.log")
@@ -155,6 +178,16 @@ class TrackerAgent:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS device_action_history (
+                    action_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    message TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
         finally:
             conn.close()
@@ -200,6 +233,383 @@ class TrackerAgent:
             self._queue_event(method, payload)
             logging.warning("Queued %s event because CRM is unreachable", method)
             return None
+
+    def _action_history_get(self, action_id):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            row = conn.execute(
+                "SELECT status, message, updated_at FROM device_action_history WHERE action_id = ?",
+                (str(action_id),),
+            ).fetchone()
+            return row
+        finally:
+            conn.close()
+
+    def _action_history_set(self, action_id, status, message=""):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            conn.execute(
+                """
+                INSERT INTO device_action_history (action_id, status, message, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(action_id) DO UPDATE SET
+                    status = excluded.status,
+                    message = excluded.message,
+                    updated_at = excluded.updated_at
+                """,
+                (str(action_id), status, message, _server_datetime(datetime.now(timezone.utc))),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _biometric_sync_path(self):
+        return self.base_dir / BIOMETRIC_SYNC_FILE
+
+    def _notification_rules_path(self):
+        return self.base_dir / (self.config.get("notifications_state_file") or "notification_rules.json")
+
+    def _notification_runtime_path(self):
+        return self.base_dir / NOTIFICATION_RUNTIME_FILE
+
+    def _load_biometric_sync_state(self):
+        path = self._biometric_sync_path()
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save_biometric_sync_state(self, payload):
+        self._biometric_sync_path().write_text(json.dumps(payload), encoding="utf-8")
+
+    def _load_notification_runtime(self):
+        path = self._notification_runtime_path()
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save_notification_runtime(self, payload):
+        self._notification_runtime_path().write_text(json.dumps(payload), encoding="utf-8")
+
+    def _extract_action(self, action):
+        payload = dict(action or {})
+        payload_body = payload.get("payload")
+        if isinstance(payload_body, str):
+            try:
+                payload_body = json.loads(payload_body)
+            except Exception:
+                payload_body = {"raw": payload_body}
+        if not isinstance(payload_body, dict):
+            payload_body = {}
+        payload["payload"] = payload_body
+        return payload
+
+    def _rule_matches(self, rule, active_app="", window_title="", website_url=""):
+        process_rule = (rule.get("process_name") or rule.get("active_app") or "").strip().lower()
+        if process_rule and process_rule != (active_app or "").strip().lower():
+            return False
+
+        title_rule = (rule.get("window_title_contains") or "").strip().lower()
+        if title_rule and title_rule not in (window_title or "").strip().lower():
+            return False
+
+        domain_rule = _normalize_domain(rule.get("domain") or "")
+        if domain_rule:
+            current_domain = _normalize_domain(urlparse(website_url or "").netloc)
+            if not current_domain:
+                return False
+            if current_domain != domain_rule and not current_domain.endswith("." + domain_rule):
+                return False
+
+        return True
+
+    def _productivity_for_event(self, payload):
+        if not self.productivity_rules:
+            return None
+
+        active_app = (payload.get("active_app") or "").strip().lower()
+        window_title = payload.get("window_title") or ""
+        website_url = payload.get("website_url") or ""
+
+        for rule in self.productivity_rules:
+            if self._rule_matches(rule, active_app=active_app, window_title=window_title, website_url=website_url):
+                return {
+                    "productivity_rating": rule.get("rating") or rule.get("productivity_rating") or "",
+                    "productivity_score": rule.get("score", 0),
+                    "productivity_rule_name": rule.get("name") or rule.get("rule_name") or "",
+                }
+
+        return None
+
+    def _apply_productivity(self, payload):
+        productivity = self._productivity_for_event(payload)
+        if productivity:
+            payload.update({key: value for key, value in productivity.items() if value not in ("", None)})
+        return payload
+
+    def _ack_device_action(self, action_id, status, message=""):
+        method = self.config.get("device_action_ack_method")
+        if not method:
+            return
+        self._post(
+            method,
+            {
+                "action_id": action_id,
+                "device_id": self.device_id,
+                "status": status,
+                "message": message,
+            },
+        )
+
+    def _change_local_password(self, payload):
+        username = payload.get("target_username") or payload.get("username") or self.windows_username
+        new_password = payload.get("new_password") or payload.get("password")
+        if not new_password:
+            raise RuntimeError("Device action change_local_password requires new_password")
+
+        subprocess.run(
+            ["net", "user", username, new_password],
+            check=True,
+            capture_output=True,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+        if payload.get("force_logoff_after_change"):
+            subprocess.Popen(
+                ["shutdown", "/l"],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+
+        return f"Local password changed for {username}"
+
+    def _sync_biometric_attendance(self):
+        if not self.biometric_sync_enabled or not self.biometric_device.get("enabled"):
+            return "Biometric sync disabled"
+
+        try:
+            from zk import ZK
+        except ImportError as exc:
+            raise RuntimeError("Biometric sync requires the pyzk package") from exc
+
+        host = self.biometric_device.get("ip")
+        port = int(self.biometric_device.get("port") or 4370)
+        password = int(self.biometric_device.get("password") or self.biometric_device.get("comm_key") or 0)
+        method = self.config.get("biometric_sync_method")
+
+        if not host or not method:
+            raise RuntimeError("Biometric sync requires CRM-provided ip and ingest method")
+
+        state = self._load_biometric_sync_state()
+        last_sync_value = state.get("last_sync_at")
+        last_sync_at = datetime.fromisoformat(last_sync_value) if last_sync_value else None
+
+        zk_client = ZK(host, port=port, timeout=10, password=password, ommit_ping=False)
+        conn = zk_client.connect()
+        try:
+            records = []
+            max_seen = last_sync_at
+            for attendance in conn.get_attendance():
+                punch_time = attendance.timestamp
+                if last_sync_at and punch_time <= last_sync_at:
+                    continue
+                records.append(
+                    {
+                        "uid": getattr(attendance, "uid", None),
+                        "user_id": getattr(attendance, "user_id", None),
+                        "timestamp": _server_datetime(punch_time.replace(tzinfo=timezone.utc) if punch_time.tzinfo is None else punch_time),
+                        "status": getattr(attendance, "status", None),
+                        "punch": getattr(attendance, "punch", None),
+                        "device_ip": host,
+                    }
+                )
+                if max_seen is None or punch_time > max_seen:
+                    max_seen = punch_time
+        finally:
+            conn.disconnect()
+
+        if records:
+            self._post(
+                method,
+                {
+                    "device_id": self.device_id,
+                    "biometric_device": self.biometric_device,
+                    "records": records,
+                },
+            )
+
+        if max_seen:
+            state["last_sync_at"] = max_seen.isoformat()
+            self._save_biometric_sync_state(state)
+
+        return f"Synced {len(records)} biometric attendance rows"
+
+    def _execute_device_action(self, action):
+        action = self._extract_action(action)
+        action_id = action.get("action_id") or action.get("name") or action.get("id")
+        action_type = action.get("action_type") or action.get("type")
+        payload = action.get("payload") or {}
+
+        if not action_id or not action_type:
+            raise RuntimeError("Invalid device action payload")
+
+        action_type = action_type.strip().lower()
+
+        if action_type == "refresh_policy":
+            self.bootstrap()
+            return "Policy refreshed"
+        if action_type == "restart_tracker":
+            return "Tracker restart requested"
+        if action_type == "lock_workstation":
+            ctypes.windll.user32.LockWorkStation()
+            return "Workstation locked"
+        if action_type == "logoff_user":
+            subprocess.Popen(["shutdown", "/l"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return "User logoff requested"
+        if action_type == "restart_computer":
+            subprocess.Popen(["shutdown", "/r", "/t", "5", "/f"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return "Computer restart requested"
+        if action_type == "shutdown_computer":
+            subprocess.Popen(["shutdown", "/s", "/t", "5", "/f"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return "Computer shutdown requested"
+        if action_type == "change_local_password":
+            return self._change_local_password(payload)
+        if action_type == "sync_biometric_attendance":
+            return self._sync_biometric_attendance()
+
+        raise RuntimeError(f"Unsupported device action type: {action_type}")
+
+    def _poll_device_actions(self, now):
+        if not self.device_actions_enabled:
+            return
+        interval_seconds = int(self.config.get("device_actions_poll_seconds", 60))
+        if now - self.last_device_action_poll < timedelta(seconds=interval_seconds):
+            return
+        self.last_device_action_poll = now
+
+        method = self.config.get("device_actions_method")
+        if not method:
+            return
+
+        response = self._call(method, {"device_id": self.device_id, "system_info": self._system_info()})
+        actions = response.get("message") or []
+        if not isinstance(actions, list):
+            return
+
+        for raw_action in actions:
+            action = self._extract_action(raw_action)
+            action_id = action.get("action_id") or action.get("name") or action.get("id")
+            if not action_id:
+                continue
+
+            existing = self._action_history_get(action_id)
+            if existing and existing[0] == "success":
+                continue
+
+            try:
+                self._action_history_set(action_id, "running", "")
+                result = self._execute_device_action(action)
+                self._action_history_set(action_id, "success", result)
+                self._ack_device_action(action_id, "success", result)
+                if (action.get("action_type") or "").strip().lower() == "restart_tracker":
+                    raise TrackerRestartRequested(result)
+            except TrackerRestartRequested:
+                raise
+            except Exception as exc:
+                message = str(exc)
+                self._action_history_set(action_id, "failed", message)
+                try:
+                    self._ack_device_action(action_id, "failed", message)
+                except Exception:
+                    logging.exception("Failed to acknowledge device action %s", action_id)
+                logging.exception("Device action failed: %s", action_id)
+
+    def _sync_biometric_if_due(self, now):
+        if not self.biometric_sync_enabled or not self.biometric_device.get("enabled"):
+            return
+        interval_minutes = int(self.config.get("biometric_sync_interval_minutes", 15))
+        if now - self.last_biometric_sync < timedelta(minutes=interval_minutes):
+            return
+        self.last_biometric_sync = now
+        try:
+            result = self._sync_biometric_attendance()
+            logging.info(result)
+        except Exception:
+            logging.exception("Biometric attendance sync failed")
+
+    def _show_notification(self, notification):
+        title = str(notification.get("title") or "Tracker Notification")
+        message = str(notification.get("message") or notification.get("body") or "")
+        if not message:
+            return
+
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            f"[System.Windows.Forms.MessageBox]::Show(@'\n{message}\n'@, @'\n{title}\n'@) | Out-Null"
+        )
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+    def _poll_notifications(self, now):
+        if not self.notifications_enabled:
+            return
+
+        interval_seconds = int(self.config.get("notifications_poll_seconds", 60))
+        if now - self.last_notification_poll < timedelta(seconds=interval_seconds):
+            return
+        self.last_notification_poll = now
+
+        method = self.config.get("notifications_method")
+        if not method:
+            return
+
+        response = self._call(method, {"device_id": self.device_id, "system_info": self._system_info()})
+        notifications = response.get("message") or []
+        if not isinstance(notifications, list):
+            notifications = []
+
+        self.notification_rules = notifications
+        self._notification_rules_path().write_text(json.dumps(notifications, indent=2), encoding="utf-8")
+
+        runtime_state = self._load_notification_runtime()
+        active_ids = set()
+
+        for item in notifications:
+            if not isinstance(item, dict):
+                continue
+            if item.get("enabled") is False:
+                continue
+
+            notification_id = str(item.get("notification_id") or item.get("name") or item.get("id") or "")
+            if not notification_id:
+                continue
+            active_ids.add(notification_id)
+
+            repeat_seconds = int(item.get("repeat_seconds") or item.get("repeat_interval_seconds") or 300)
+            last_shown_raw = runtime_state.get(notification_id, {}).get("last_shown")
+            last_shown = datetime.fromisoformat(last_shown_raw) if last_shown_raw else None
+            if last_shown and now - last_shown < timedelta(seconds=repeat_seconds):
+                continue
+
+            self._show_notification(item)
+            runtime_state[notification_id] = {
+                "last_shown": now.isoformat(),
+                "title": item.get("title") or "",
+            }
+            logging.info("Displayed notification %s", notification_id)
+
+        for notification_id in list(runtime_state.keys()):
+            if notification_id not in active_ids:
+                del runtime_state[notification_id]
+
+        self._save_notification_runtime(runtime_state)
 
     def _update_check_path(self):
         return self.base_dir / UPDATE_CHECK_FILE
@@ -469,6 +879,7 @@ try {
 
     def _send_activity(self, payload):
         payload.setdefault("system_info", self._system_info())
+        self._apply_productivity(payload)
         return self._send_or_queue("cclms.api.desktop_tracker.ingest_activity", payload)
 
     def _send_call(self, payload):
@@ -489,6 +900,22 @@ try {
                 f"Tracker device '{self.device_id}' did not return a binding from CRM. "
                 "Check Tracker Device enrollment, allowed_service_user, and API credentials."
             )
+
+        if message.get("productivity_rules") is not None:
+            self.productivity_rules = list(message.get("productivity_rules") or [])
+        self.device_actions_enabled = bool(message.get("device_actions_enabled", self.config.get("device_actions_enabled", False)))
+        if message.get("device_actions_poll_seconds"):
+            self.config["device_actions_poll_seconds"] = int(message["device_actions_poll_seconds"])
+        if message.get("notifications_enabled") is not None:
+            self.notifications_enabled = bool(message.get("notifications_enabled"))
+        if message.get("notifications_poll_seconds"):
+            self.config["notifications_poll_seconds"] = int(message["notifications_poll_seconds"])
+        if message.get("biometric_sync_enabled") is not None:
+            self.biometric_sync_enabled = bool(message.get("biometric_sync_enabled"))
+        if message.get("biometric_sync_interval_minutes"):
+            self.config["biometric_sync_interval_minutes"] = int(message["biometric_sync_interval_minutes"])
+        if message.get("biometric_device") is not None:
+            self.biometric_device = dict(message.get("biometric_device") or {})
 
         self.config["heartbeat_seconds"] = int(message.get("heartbeat_seconds") or self.config.get("heartbeat_seconds", 60))
         self.config["snapshot_min_minutes"] = int(message.get("snapshot_min_minutes") or self.config.get("snapshot_min_minutes", 45))
@@ -551,6 +978,9 @@ try {
                     process_name, window_title = self._foreground_window()
 
                     self._flush_queue()
+                    self._poll_device_actions(now)
+                    self._poll_notifications(now)
+                    self._sync_biometric_if_due(now)
 
                     self._send_activity(
                         {
@@ -601,6 +1031,14 @@ try {
             except KeyboardInterrupt:
                 self._safe_logout()
                 raise
+            except TrackerRestartRequested:
+                logging.info("Tracker restart requested by CRM action")
+                self._safe_logout()
+                self.binding = {}
+                self.policy = {}
+                self.active_call = None
+                self.next_snapshot_at = self._next_snapshot_time()
+                time.sleep(2)
             except Exception as exc:
                 if self._is_fatal_error(exc):
                     logging.exception("Fatal tracker error; stopping process")

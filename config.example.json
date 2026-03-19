@@ -5,5 +5,8 @@
   "device_id": "WIN-LAPTOP-01",
   "github_repo": "your-org/windows_tracker_client",
   "github_release_asset": "cclms-tracker-windows-x64.zip",
-  "auto_update_enabled": true
+  "auto_update_enabled": true,
+  "device_actions_enabled": false,
+  "notifications_enabled": false,
+  "biometric_sync_enabled": false
 }

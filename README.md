@@ -20,6 +20,13 @@ It is separate from the `cclms` app codebase, but it sends data into the backend
 - `cclms.api.desktop_tracker.ingest_logout`
 - `cclms.api.desktop_tracker.get_tracking_policy`
 
+Optional CRM-driven extensions can also be enabled without breaking the normal tracker flow:
+
+- productivity rules returned by policy
+- device actions polled from CRM
+- local repeating notifications polled from CRM
+- biometric attendance sync using CRM-provided device settings
+
 ## Embedded Defaults
 
 The EXE is designed to ship with your default connection details already embedded in:
@@ -138,6 +145,15 @@ Set these values in `embedded_defaults.py` or `config.json`:
 - `auto_update_enabled` default: `true`
 - `auto_update_check_minutes` default: `360`
 
+Other optional runtime controls:
+
+- `device_actions_enabled`
+- `device_actions_poll_seconds`
+- `notifications_enabled`
+- `notifications_poll_seconds`
+- `biometric_sync_enabled`
+- `biometric_sync_interval_minutes`
+
 How it works:
 
 1. The installed EXE checks GitHub Releases on startup
@@ -246,3 +262,4 @@ hostname
 - Screenshots are uploaded to private files in Frappe.
 - On startup, the agent calls `cclms.api.desktop_tracker.get_tracking_policy` and validates that the current `device_id` is enrolled in `Tracker Device`.
 - The EXE writes a simple local log file named `tracker.log` next to the executable.
+- If CRM provides notifications, the agent caches them locally in `notification_rules.json` and shows repeating Windows popups until CRM stops sending them.

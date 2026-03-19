@@ -2,4 +2,5 @@ psutil
 requests
 pywin32
 pillow
+pyzk
 
