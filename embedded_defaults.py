@@ -8,6 +8,8 @@ DEFAULT_CONFIG = {
     "service_name": "CCLMS-Tracker",
     "auto_update_enabled": True,
     "auto_update_check_minutes": 360,
+    "offline_queue_db": "tracker_queue.sqlite3",
+    "runtime_restart_delay_seconds": 30,
     "heartbeat_seconds": 60,
     "history_seconds": 120,
     "snapshot_min_minutes": 45,

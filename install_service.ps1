@@ -96,8 +96,15 @@ function Install-WithScheduledTask {
     $actionArgs = '"' + $ConfigFilePath + '"'
     $action = New-ScheduledTaskAction -Execute $ExecutablePath -Argument $actionArgs -WorkingDirectory $WorkingDirectory
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $trigger.Delay = "PT1M"
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances Ignore
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances Ignore -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+
+    try {
+        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    } catch {
+    }
+    Get-Process "cclms-tracker" -ErrorAction SilentlyContinue | Stop-Process -Force
 
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
     Start-ScheduledTask -TaskName $TaskName

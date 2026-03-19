@@ -8,9 +8,7 @@ if (-not (Test-Path ".venv")) {
 }
 
 $venvPython = ".\.venv\Scripts\python.exe"
-$venvPyInstaller = ".\.venv\Scripts\pyinstaller.exe"
 $pythonCmd = $venvPython
-$pyInstallerCmd = $venvPyInstaller
 $useSystemPython = $false
 
 & $venvPython -m pip --version | Out-Null
@@ -25,7 +23,6 @@ if ($useSystemPython) {
     & py -m pip install -r .\requirements.txt -r .\requirements-build.txt
     if ($LASTEXITCODE -ne 0) { throw "Failed to install build dependencies with system Python" }
     $pythonCmd = "py"
-    $pyInstallerCmd = "py"
 } else {
     & $venvPython -m pip install --upgrade pip
     if ($LASTEXITCODE -ne 0) { throw "Failed to upgrade virtualenv pip" }
@@ -33,12 +30,12 @@ if ($useSystemPython) {
     if ($LASTEXITCODE -ne 0) { throw "Failed to install build dependencies in virtualenv" }
 }
 
-if ($useSystemPython) {
-    & $pyInstallerCmd -m PyInstaller --clean --noconfirm .\tracker.spec
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed with system Python" }
-} else {
-    & $pyInstallerCmd --clean --noconfirm .\tracker.spec
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed in virtualenv" }
+& $pythonCmd -m PyInstaller --clean --noconfirm .\tracker.spec
+if ($LASTEXITCODE -ne 0) {
+    if ($useSystemPython) {
+        throw "PyInstaller build failed with system Python"
+    }
+    throw "PyInstaller build failed in virtualenv"
 }
 
 Write-Host ""

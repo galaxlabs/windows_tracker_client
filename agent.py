@@ -27,6 +27,7 @@ from version import __version__
 
 EPOCH_OFFSET = 11644473600
 UPDATE_CHECK_FILE = ".update-check.json"
+QUEUE_DB_FILE = "tracker_queue.sqlite3"
 
 
 def _base_dir():
@@ -87,6 +88,7 @@ class TrackerAgent:
         self.config = _load_config(config_path)
         self.base_dir = _base_dir()
         self._setup_logging()
+        self._init_queue()
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -136,6 +138,68 @@ class TrackerAgent:
 
     def _call(self, method, payload=None):
         return self._post(method, payload or {})
+
+    def _queue_db_path(self):
+        return self.base_dir / (self.config.get("offline_queue_db") or QUEUE_DB_FILE)
+
+    def _init_queue(self):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbound_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    method TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _queue_event(self, method, payload):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            conn.execute(
+                "INSERT INTO outbound_queue (method, payload_json, created_at) VALUES (?, ?, ?)",
+                (method, json.dumps(payload), _server_datetime(datetime.now(timezone.utc))),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _flush_queue(self):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            rows = conn.execute(
+                "SELECT id, method, payload_json FROM outbound_queue ORDER BY id ASC LIMIT 100"
+            ).fetchall()
+            for row_id, method, payload_json in rows:
+                payload = json.loads(payload_json)
+                try:
+                    self._post(method, payload)
+                except requests.RequestException:
+                    return
+                except Exception:
+                    logging.exception("Dropping invalid queued event id=%s method=%s", row_id, method)
+                    conn.execute("DELETE FROM outbound_queue WHERE id = ?", (row_id,))
+                    conn.commit()
+                    continue
+
+                conn.execute("DELETE FROM outbound_queue WHERE id = ?", (row_id,))
+                conn.commit()
+        finally:
+            conn.close()
+
+    def _send_or_queue(self, method, payload):
+        try:
+            return self._post(method, payload)
+        except requests.RequestException:
+            self._queue_event(method, payload)
+            logging.warning("Queued %s event because CRM is unreachable", method)
+            return None
 
     def _update_check_path(self):
         return self.base_dir / UPDATE_CHECK_FILE
@@ -300,6 +364,41 @@ try {
             "memory_percent": psutil.virtual_memory().percent,
         }
 
+    def _restart_delay(self):
+        return int(self.config.get("runtime_restart_delay_seconds", 30))
+
+    def _is_fatal_error(self, exc):
+        if isinstance(exc, requests.RequestException):
+            return False
+        if isinstance(exc, RuntimeError):
+            message = str(exc)
+            fatal_markers = [
+                "did not return a binding from CRM",
+                "HTTP 401",
+                "HTTP 403",
+            ]
+            return any(marker in message for marker in fatal_markers)
+        return False
+
+    def _safe_logout(self):
+        try:
+            self.send_logout()
+        except Exception:
+            logging.exception("Failed to send logout event")
+
+    def _bootstrap_until_ready(self):
+        while True:
+            try:
+                self.bootstrap()
+                self._flush_queue()
+                self.send_login()
+                return
+            except Exception as exc:
+                if self._is_fatal_error(exc):
+                    raise
+                logging.exception("Bootstrap failed; retrying in %s seconds", self._restart_delay())
+                time.sleep(self._restart_delay())
+
     def _ip_address(self):
         try:
             return socket.gethostbyname(socket.gethostname())
@@ -370,11 +469,11 @@ try {
 
     def _send_activity(self, payload):
         payload.setdefault("system_info", self._system_info())
-        return self._post("cclms.api.desktop_tracker.ingest_activity", payload)
+        return self._send_or_queue("cclms.api.desktop_tracker.ingest_activity", payload)
 
     def _send_call(self, payload):
         payload.setdefault("system_info", self._system_info())
-        return self._post("cclms.api.desktop_tracker.ingest_call", payload)
+        return self._send_or_queue("cclms.api.desktop_tracker.ingest_call", payload)
 
     def bootstrap(self):
         logging.info("Bootstrapping tracker for device_id=%s machine=%s", self.device_id, self.machine_name)
@@ -410,7 +509,7 @@ try {
         )
 
     def send_logout(self):
-        self._post(
+        self._send_or_queue(
             "cclms.api.desktop_tracker.ingest_logout",
             {
                 "event_time": _server_datetime(datetime.now(timezone.utc)),
@@ -443,68 +542,77 @@ try {
 
     def loop(self):
         self._check_for_updates()
-        self.bootstrap()
-        self.send_login()
-        heartbeat_seconds = int(self.config.get("heartbeat_seconds", 60))
-        try:
-            while True:
-                now = datetime.now(timezone.utc)
-                process_name, window_title = self._foreground_window()
+        while True:
+            try:
+                self._bootstrap_until_ready()
+                heartbeat_seconds = int(self.config.get("heartbeat_seconds", 60))
+                while True:
+                    now = datetime.now(timezone.utc)
+                    process_name, window_title = self._foreground_window()
 
-                self._send_activity(
-                    {
-                        "event_type": "Heartbeat",
-                        "event_time": _server_datetime(now),
-                        "event_source": "windows-agent",
-                        "active_app": process_name,
-                        "window_title": window_title,
-                        "activity_type": "CRM Entry",
-                        "summary": f"Foreground app: {process_name}",
-                        "event_minutes": round(heartbeat_seconds / 60.0, 2),
-                    }
-                )
+                    self._flush_queue()
 
-                self._handle_inferred_call(process_name, window_title)
-
-                for url, title, last_visit_time in self._recent_browser_rows():
-                    visited_at = chrome_time_to_datetime(last_visit_time) or now
                     self._send_activity(
                         {
-                            "event_type": "Website Visit",
-                            "event_time": _server_datetime(visited_at),
-                            "event_source": "browser-history",
-                            "active_app": "browser",
-                            "window_title": title,
-                            "website_url": url,
-                            "summary": f"Visited {urlparse(url).netloc}",
-                            "event_minutes": 0,
-                        }
-                    )
-                self.last_history_scan = now
-
-                if now >= self.next_snapshot_at:
-                    self._send_activity(
-                        {
-                            "event_type": "Screen Snap",
+                            "event_type": "Heartbeat",
                             "event_time": _server_datetime(now),
                             "event_source": "windows-agent",
                             "active_app": process_name,
                             "window_title": window_title,
-                            "summary": "Random hourly snapshot",
-                            "screenshot_base64": self._take_snapshot(),
+                            "activity_type": "CRM Entry",
+                            "summary": f"Foreground app: {process_name}",
+                            "event_minutes": round(heartbeat_seconds / 60.0, 2),
                         }
                     )
-                    self.next_snapshot_at = self._next_snapshot_time()
 
-                time.sleep(heartbeat_seconds)
-        except Exception:
-            logging.exception("Tracker loop stopped unexpectedly")
-            raise
-        finally:
-            try:
-                self.send_logout()
-            except Exception:
-                logging.exception("Failed to send logout event")
+                    self._handle_inferred_call(process_name, window_title)
+
+                    for url, title, last_visit_time in self._recent_browser_rows():
+                        visited_at = chrome_time_to_datetime(last_visit_time) or now
+                        self._send_activity(
+                            {
+                                "event_type": "Website Visit",
+                                "event_time": _server_datetime(visited_at),
+                                "event_source": "browser-history",
+                                "active_app": "browser",
+                                "window_title": title,
+                                "website_url": url,
+                                "summary": f"Visited {urlparse(url).netloc}",
+                                "event_minutes": 0,
+                            }
+                        )
+                    self.last_history_scan = now
+
+                    if now >= self.next_snapshot_at:
+                        self._send_activity(
+                            {
+                                "event_type": "Screen Snap",
+                                "event_time": _server_datetime(now),
+                                "event_source": "windows-agent",
+                                "active_app": process_name,
+                                "window_title": window_title,
+                                "summary": "Random hourly snapshot",
+                                "screenshot_base64": self._take_snapshot(),
+                            }
+                        )
+                        self.next_snapshot_at = self._next_snapshot_time()
+
+                    time.sleep(heartbeat_seconds)
+            except KeyboardInterrupt:
+                self._safe_logout()
+                raise
+            except Exception as exc:
+                if self._is_fatal_error(exc):
+                    logging.exception("Fatal tracker error; stopping process")
+                    self._safe_logout()
+                    raise
+                logging.exception("Transient tracker error; restarting loop in %s seconds", self._restart_delay())
+                self._safe_logout()
+                self.binding = {}
+                self.policy = {}
+                self.active_call = None
+                self.next_snapshot_at = self._next_snapshot_time()
+                time.sleep(self._restart_delay())
 
 
 def main():
