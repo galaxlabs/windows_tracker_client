@@ -37,10 +37,6 @@ function Has-Value {
 function Test-NeedsSetup {
     param([hashtable]$Config)
 
-    if (-not (Has-Value ($Config["device_id"]))) {
-        return $true
-    }
-
     $hasSite = Has-Value ($Config["site_url"])
     $hasKey = Has-Value ($Config["api_key"])
     $hasSecret = Has-Value ($Config["api_secret"])
@@ -50,6 +46,29 @@ function Test-NeedsSetup {
     }
 
     return $false
+}
+
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Ensure-DeviceId {
+    param(
+        [hashtable]$Config,
+        [string]$ConfigPath
+    )
+
+    if (Has-Value ($Config["device_id"])) {
+        return $Config
+    }
+
+    $Config["device_id"] = $env:COMPUTERNAME
+    $json = $Config | ConvertTo-Json -Depth 4
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($ConfigPath, $json, $utf8NoBom)
+    return $Config
 }
 
 function Resolve-NssmPath {
@@ -77,7 +96,7 @@ function Resolve-NssmPath {
 
     foreach ($candidate in $candidates) {
         if (Has-Value $candidate -and (Test-Path -LiteralPath $candidate)) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+            return [System.IO.Path]::GetFullPath($candidate)
         }
     }
 
@@ -93,10 +112,21 @@ function Install-WithScheduledTask {
         [string]$WorkingDirectory
     )
 
+    if (-not (Test-IsAdministrator)) {
+        throw "Scheduled task installation requires an elevated PowerShell window. Reopen PowerShell as Administrator and rerun .\install_service.ps1 -InstallMode Task"
+    }
+
     $actionArgs = '"' + $ConfigFilePath + '"'
     $action = New-ScheduledTaskAction -Execute $ExecutablePath -Argument $actionArgs -WorkingDirectory $WorkingDirectory
+<<<<<<< HEAD
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $trigger.Delay = "PT1M"
+=======
+    $triggers = @(
+        New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        New-ScheduledTaskTrigger -AtStartup
+    )
+>>>>>>> a086edfe20fb9ff0ca2355721b3b1bf389fe16f0
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances Ignore -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 
@@ -106,10 +136,18 @@ function Install-WithScheduledTask {
     }
     Get-Process "cclms-tracker" -ErrorAction SilentlyContinue | Stop-Process -Force
 
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        try {
+            Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
+
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
     Start-ScheduledTask -TaskName $TaskName
 
-    Write-Host "Scheduled task installed and started: $TaskName"
+    Write-Host "Scheduled task installed, refreshed, and started: $TaskName"
 }
 
 function Install-WithNssm {
@@ -121,12 +159,27 @@ function Install-WithNssm {
         [string]$WorkingDirectory
     )
 
-    & $ResolvedNssmPath install $TaskName $ExecutablePath $ConfigFilePath
+    if (-not (Test-IsAdministrator)) {
+        throw "Service installation requires an elevated PowerShell window. Reopen PowerShell as Administrator and rerun .\install_service.ps1 -InstallMode Service -NssmPath '<real path to nssm.exe>'"
+    }
+
+    & $ResolvedNssmPath status $TaskName | Out-Null
+    $serviceExists = ($LASTEXITCODE -eq 0)
+
+    if ($serviceExists) {
+        & $ResolvedNssmPath stop $TaskName | Out-Null
+    } else {
+        & $ResolvedNssmPath install $TaskName $ExecutablePath $ConfigFilePath
+    }
+
+    & $ResolvedNssmPath set $TaskName Application $ExecutablePath
+    & $ResolvedNssmPath set $TaskName AppParameters $ConfigFilePath
     & $ResolvedNssmPath set $TaskName AppDirectory $WorkingDirectory
     & $ResolvedNssmPath set $TaskName Start SERVICE_AUTO_START
+    & $ResolvedNssmPath set $TaskName AppExit Default Restart
     & $ResolvedNssmPath start $TaskName
 
-    Write-Host "Service installed and started via NSSM: $TaskName"
+    Write-Host "Service installed or refreshed and started via NSSM: $TaskName"
 }
 
 if (-not (Test-Path $exePath)) {
@@ -142,9 +195,7 @@ if (Test-NeedsSetup -Config $config) {
     $config = Get-TrackerConfig -Path $configPath
 }
 
-if (-not (Has-Value ($config["device_id"]))) {
-    throw "Device ID is still missing in config.json"
-}
+$config = Ensure-DeviceId -Config $config -ConfigPath $configPath
 
 $resolvedNssmPath = $null
 try {

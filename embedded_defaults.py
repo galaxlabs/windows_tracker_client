@@ -3,7 +3,7 @@ DEFAULT_CONFIG = {
     "api_key": "TRACKER_SERVICE_API_KEY",
     "api_secret": "TRACKER_SERVICE_API_SECRET",
     "device_id": "",
-    "github_repo": "",
+    "github_repo": "galaxlabs/windows_tracker_client",
     "github_release_asset": "cclms-tracker-windows-x64.zip",
     "service_name": "CCLMS-Tracker",
     "auto_update_enabled": True,
