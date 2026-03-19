@@ -218,8 +218,15 @@ $buttons = @(
                 & powershell -ExecutionPolicy Bypass -File $installScript | Out-Null
                 Append-Log "Install / refresh complete"
 
+                try {
+                    Start-ScheduledTask -TaskName "CCLMS-Tracker" -ErrorAction SilentlyContinue
+                    Append-Log "Tracker task start requested"
+                } catch {
+                    Append-Log "Tracker task start request failed: $($_.Exception.Message)"
+                }
+
                 Refresh-UiFromConfig
-                Append-Log "Install All finished"
+                Append-Log "Install All finished and tracker activation was attempted"
             } catch {
                 Append-Log "Install All failed: $($_.Exception.Message)"
                 [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Install All Failed")
