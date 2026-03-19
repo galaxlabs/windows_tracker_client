@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import shutil
 import socket
 import sqlite3
@@ -124,12 +125,15 @@ class TrackerAgent:
         self.productivity_rules = list(self.config.get("productivity_rules") or [])
         self.device_actions_enabled = bool(self.config.get("device_actions_enabled", False))
         self.last_device_action_poll = datetime.now(timezone.utc) - timedelta(seconds=int(self.config.get("device_actions_poll_seconds", 60)))
+        self.device_health_enabled = bool(self.config.get("device_health_enabled", False))
+        self.last_device_health_poll = datetime.now(timezone.utc) - timedelta(seconds=int(self.config.get("device_health_poll_seconds", 300)))
         self.notifications_enabled = bool(self.config.get("notifications_enabled", False))
         self.last_notification_poll = datetime.now(timezone.utc) - timedelta(seconds=int(self.config.get("notifications_poll_seconds", 60)))
         self.notification_rules = []
         self.biometric_sync_enabled = bool(self.config.get("biometric_sync_enabled", False))
         self.biometric_device = dict(self.config.get("biometric_device") or {})
         self.last_biometric_sync = datetime.now(timezone.utc) - timedelta(minutes=int(self.config.get("biometric_sync_interval_minutes", 15)))
+        self.call_metadata_enabled = bool(self.config.get("call_metadata_enabled", True))
         self.map_assistant = MapIntelligenceAssistant(
             base_dir=self.base_dir,
             config=self.config,
@@ -305,6 +309,185 @@ class TrackerAgent:
 
     def _save_notification_runtime(self, payload):
         self._notification_runtime_path().write_text(json.dumps(payload), encoding="utf-8")
+
+    def _log_path(self):
+        return self.base_dir / (self.config.get("log_file") or "tracker.log")
+
+    def _tail_log_lines(self, limit=None):
+        limit = int(limit or self.config.get("device_health_log_lines", 20))
+        log_path = self._log_path()
+        if not log_path.exists():
+            return []
+        try:
+            return log_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-limit:]
+        except Exception:
+            return []
+
+    def _queue_count(self):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM outbound_queue").fetchone()
+            return int(row[0] if row else 0)
+        finally:
+            conn.close()
+
+    def _process_count(self):
+        return len([proc for proc in psutil.process_iter(["name"]) if (proc.info.get("name") or "").lower() == "cclms-tracker.exe"])
+
+    def _tracker_processes(self):
+        processes = []
+        for proc in psutil.process_iter(["pid", "name", "create_time"]):
+            if (proc.info.get("name") or "").lower() == "cclms-tracker.exe":
+                processes.append(proc.info)
+        return sorted(processes, key=lambda item: item.get("create_time") or 0)
+
+    def _dns_status(self):
+        host = urlparse(self.base).hostname or self.base
+        try:
+            ip = socket.gethostbyname(host)
+            return {"host": host, "ok": True, "ip": ip}
+        except Exception as exc:
+            return {"host": host, "ok": False, "error": str(exc)}
+
+    def _collect_diagnostics(self):
+        return {
+            "device_id": self.device_id,
+            "machine_name": self.machine_name,
+            "windows_username": self.windows_username,
+            "version": self.current_version,
+            "queue_count": self._queue_count(),
+            "process_count": self._process_count(),
+            "processes": self._tracker_processes(),
+            "dns_status": self._dns_status(),
+            "last_log_lines": self._tail_log_lines(),
+            "time_utc": _server_datetime(datetime.now(timezone.utc)),
+        }
+
+    def _report_device_health(self, now):
+        if not self.device_health_enabled:
+            return
+        interval_seconds = int(self.config.get("device_health_poll_seconds", 300))
+        if now - self.last_device_health_poll < timedelta(seconds=interval_seconds):
+            return
+        self.last_device_health_poll = now
+
+        method = self.config.get("device_health_method")
+        if not method:
+            return
+
+        payload = self._collect_diagnostics()
+        payload["system_info"] = self._system_info()
+        try:
+            self._send_or_queue(method, payload)
+        except Exception:
+            logging.exception("Device health report failed")
+
+    def _flush_dns(self):
+        subprocess.run(
+            ["ipconfig", "/flushdns"],
+            check=True,
+            capture_output=True,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return "DNS cache flushed"
+
+    def _clear_offline_queue(self):
+        conn = sqlite3.connect(self._queue_db_path())
+        try:
+            conn.execute("DELETE FROM outbound_queue")
+            conn.commit()
+        finally:
+            conn.close()
+        return "Offline queue cleared"
+
+    def _reset_notification_cache(self):
+        for path in [self._notification_rules_path(), self._notification_runtime_path()]:
+            if path.exists():
+                path.unlink()
+        self.notification_rules = []
+        return "Notification cache reset"
+
+    def _repair_tracker_runtime(self):
+        for path in [
+            self._update_check_path(),
+            self._notification_runtime_path(),
+            self._biometric_sync_path(),
+        ]:
+            if path.exists():
+                path.unlink()
+        self._init_queue()
+        self.binding = {}
+        self.policy = {}
+        self.active_call = None
+        self.next_snapshot_at = self._next_snapshot_time()
+        return "Tracker runtime reset completed"
+
+    def _close_duplicate_tracker_processes(self):
+        processes = self._tracker_processes()
+        if len(processes) <= 1:
+            return "No duplicate tracker process found"
+        keep_pid = os.getpid()
+        closed = []
+        for proc in processes:
+            pid = proc.get("pid")
+            if pid and pid != keep_pid:
+                try:
+                    psutil.Process(pid).kill()
+                    closed.append(pid)
+                except Exception:
+                    logging.exception("Failed to stop duplicate tracker pid=%s", pid)
+        return f"Stopped duplicate tracker processes: {closed}" if closed else "No duplicate tracker process stopped"
+
+    def _clear_app_temp_files(self):
+        removed = []
+        temp_root = Path(tempfile.gettempdir())
+        patterns = ["cclms-tracker-update-*", "snapshot_*.jpg"]
+        for pattern in patterns:
+            for item in temp_root.glob(pattern):
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                    removed.append(str(item))
+                except Exception:
+                    logging.exception("Failed to remove temp item %s", item)
+        return f"Removed {len(removed)} app temp items"
+
+    def _extract_call_metadata(self, window_title, process_name):
+        metadata = {
+            "active_app": process_name,
+            "window_title": window_title,
+            "source_system": "windows-inferred-call",
+        }
+        if not self.call_metadata_enabled:
+            return metadata
+
+        text = window_title or ""
+        metadata["direction"] = "unknown"
+        lower = text.lower()
+        if any(token in lower for token in ["incoming", "inbound", "caller"]):
+            metadata["direction"] = "incoming"
+        elif any(token in lower for token in ["outgoing", "outbound", "dialing", "calling"]):
+            metadata["direction"] = "outgoing"
+
+        for rule in self.config.get("call_detail_patterns", []) or []:
+            name = rule.get("name")
+            pattern = rule.get("pattern")
+            if not name or not pattern:
+                continue
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip()
+                metadata[name] = value
+                if name == "phone_number":
+                    metadata.setdefault("caller_phone", value)
+                    metadata.setdefault("callee_phone", value)
+
+        if " - " in text:
+            metadata.setdefault("caller_id", text.split(" - ", 1)[0].strip())
+        return metadata
 
     def _extract_action(self, action):
         payload = dict(action or {})
@@ -489,6 +672,21 @@ class TrackerAgent:
             return "Computer shutdown requested"
         if action_type == "change_local_password":
             return self._change_local_password(payload)
+        if action_type == "collect_diagnostics":
+            diagnostics = self._collect_diagnostics()
+            return json.dumps(diagnostics)
+        if action_type == "close_duplicate_tracker_processes":
+            return self._close_duplicate_tracker_processes()
+        if action_type == "flush_dns":
+            return self._flush_dns()
+        if action_type == "clear_offline_queue":
+            return self._clear_offline_queue()
+        if action_type == "clear_app_temp_files":
+            return self._clear_app_temp_files()
+        if action_type == "reset_notification_cache":
+            return self._reset_notification_cache()
+        if action_type == "repair_tracker_runtime":
+            return self._repair_tracker_runtime()
         if action_type == "sync_biometric_attendance":
             return self._sync_biometric_attendance()
 
@@ -916,6 +1114,10 @@ try {
         self.device_actions_enabled = bool(message.get("device_actions_enabled", self.config.get("device_actions_enabled", False)))
         if message.get("device_actions_poll_seconds"):
             self.config["device_actions_poll_seconds"] = int(message["device_actions_poll_seconds"])
+        if message.get("device_health_enabled") is not None:
+            self.device_health_enabled = bool(message.get("device_health_enabled"))
+        if message.get("device_health_poll_seconds"):
+            self.config["device_health_poll_seconds"] = int(message["device_health_poll_seconds"])
         if message.get("notifications_enabled") is not None:
             self.notifications_enabled = bool(message.get("notifications_enabled"))
         if message.get("notifications_poll_seconds"):
@@ -964,10 +1166,9 @@ try {
             self.active_call = {
                 "call_id": f"{self.device_id}-{int(time.time())}",
                 "start_time": _server_datetime(now),
-                "window_title": window_title,
-                "active_app": process_name,
                 "status": "Started",
             }
+            self.active_call.update(self._extract_call_metadata(window_title, process_name))
             return
 
         if self.active_call and not is_call_app:
@@ -975,6 +1176,11 @@ try {
             payload["end_time"] = _server_datetime(now)
             payload["status"] = "Completed"
             payload["source_system"] = "windows-inferred-call"
+            try:
+                start_dt = datetime.strptime(payload["start_time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                payload["duration_seconds"] = int((now - start_dt).total_seconds())
+            except Exception:
+                pass
             self._send_call(payload)
             self.active_call = None
 
@@ -990,6 +1196,7 @@ try {
 
                     self._flush_queue()
                     self._poll_device_actions(now)
+                    self._report_device_health(now)
                     self._poll_notifications(now)
                     self._sync_biometric_if_due(now)
 

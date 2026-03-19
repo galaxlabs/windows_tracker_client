@@ -7,7 +7,9 @@
   "github_release_asset": "cclms-tracker-windows-x64.zip",
   "auto_update_enabled": true,
   "device_actions_enabled": false,
+  "device_health_enabled": false,
   "notifications_enabled": false,
   "map_intelligence_enabled": false,
-  "biometric_sync_enabled": false
+  "biometric_sync_enabled": false,
+  "call_metadata_enabled": true
 }

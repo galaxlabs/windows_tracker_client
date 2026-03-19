@@ -15,6 +15,10 @@ DEFAULT_CONFIG = {
     "device_actions_poll_seconds": 60,
     "device_actions_method": "cclms.api.desktop_tracker.get_device_actions",
     "device_action_ack_method": "cclms.api.desktop_tracker.ack_device_action",
+    "device_health_enabled": False,
+    "device_health_poll_seconds": 300,
+    "device_health_method": "cclms.api.desktop_tracker.report_device_health",
+    "device_health_log_lines": 20,
     "notifications_enabled": False,
     "notifications_poll_seconds": 60,
     "notifications_method": "cclms.api.desktop_tracker.get_device_notifications",
@@ -45,6 +49,13 @@ DEFAULT_CONFIG = {
     "snapshot_max_minutes": 75,
     "allowed_browser_processes": ["chrome.exe", "msedge.exe"],
     "call_process_hints": ["ringcentral.exe", "zoiper.exe", "teams.exe", "phone.exe"],
+    "call_metadata_enabled": True,
+    "call_detail_patterns": [
+        {
+            "name": "phone_number",
+            "pattern": "(\\+?\\d[\\d\\s\\-()]{6,}\\d)"
+        }
+    ],
     "verify_ssl": True,
     "log_file": "tracker.log",
 }

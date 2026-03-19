@@ -25,12 +25,23 @@ may optionally include these additional fields:
     "device_actions_enabled": false,
     "device_actions_poll_seconds": 60,
 
+    "device_health_enabled": false,
+    "device_health_poll_seconds": 300,
+
     "notifications_enabled": false,
     "notifications_poll_seconds": 60,
 
     "biometric_sync_enabled": false,
     "biometric_sync_interval_minutes": 15,
     "biometric_device": {},
+
+    "call_metadata_enabled": true,
+    "call_detail_patterns": [
+      {
+        "name": "phone_number",
+        "pattern": "(\\+?\\d[\\d\\s\\-()]{6,}\\d)"
+      }
+    ],
 
     "map_intelligence_enabled": false,
     "map_sync_scope_seconds": 180,
@@ -348,6 +359,16 @@ Request:
 }
 ```
 
+Additional supported action types on the Windows client:
+
+- `collect_diagnostics`
+- `close_duplicate_tracker_processes`
+- `flush_dns`
+- `clear_offline_queue`
+- `clear_app_temp_files`
+- `reset_notification_cache`
+- `repair_tracker_runtime`
+
 ## 8. Biometric Attendance Ingest
 
 Method:
@@ -429,6 +450,83 @@ Optional policy fragment:
   "map_popup_enabled": true
 }
 ```
+
+## 11. Device Health Report
+
+Method:
+
+- `cclms.api.desktop_tracker.report_device_health`
+
+Request:
+
+```json
+{
+  "device_id": "DEVICE-ID",
+  "machine_name": "DESKTOP-01",
+  "windows_username": "user",
+  "version": "0.1.0",
+  "queue_count": 0,
+  "process_count": 1,
+  "dns_status": {
+    "host": "crm.galaxylabs.online",
+    "ok": true,
+    "ip": "31.97.197.65"
+  },
+  "last_log_lines": [
+    "2026-03-19 08:10:00 INFO Bootstrapping tracker..."
+  ],
+  "time_utc": "2026-03-19 08:15:00",
+  "system_info": {
+    "device_id": "DEVICE-ID",
+    "machine_name": "DESKTOP-01",
+    "windows_username": "user"
+  }
+}
+```
+
+Purpose:
+
+- identify broken devices centrally
+- see DNS or queue problems remotely
+- support admin troubleshooting actions from CRM
+
+## 12. Call Details Ingest
+
+Method:
+
+- `cclms.api.desktop_tracker.ingest_call_details`
+
+Request:
+
+```json
+{
+  "device_id": "DEVICE-ID",
+  "call_id": "DEVICE-ID-1710830000",
+  "source_system": "windows-inferred-call",
+  "active_app": "ringcentral.exe",
+  "window_title": "John Smith - Incoming call +1 555 111 2222",
+  "direction": "incoming",
+  "caller_id": "John Smith",
+  "caller_phone": "+15551112222",
+  "callee_phone": "+15551112222",
+  "phone_number": "+15551112222",
+  "start_time": "2026-03-19 08:20:00",
+  "end_time": "2026-03-19 08:25:15",
+  "duration_seconds": 315,
+  "status": "Completed",
+  "system_info": {
+    "device_id": "DEVICE-ID",
+    "machine_name": "DESKTOP-01",
+    "windows_username": "user"
+  }
+}
+```
+
+Notes:
+
+- this is metadata-only
+- use RingCentral or backend archival for actual recording evidence
+- do not require audio capture from the Windows agent to use this endpoint
 
 ## Implementation Notes For Backend
 

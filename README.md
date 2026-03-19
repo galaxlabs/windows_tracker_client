@@ -24,9 +24,11 @@ Optional CRM-driven extensions can also be enabled without breaking the normal t
 
 - productivity rules returned by policy
 - device actions polled from CRM
+- device health reporting and troubleshooting actions
 - local repeating notifications polled from CRM
 - map intelligence / scouting assistance with local SQLite cache
 - biometric attendance sync using CRM-provided device settings
+- optional call metadata extraction for softphone workflows
 
 ## Embedded Defaults
 
@@ -150,6 +152,8 @@ Other optional runtime controls:
 
 - `device_actions_enabled`
 - `device_actions_poll_seconds`
+- `device_health_enabled`
+- `device_health_poll_seconds`
 - `notifications_enabled`
 - `notifications_poll_seconds`
 - `map_intelligence_enabled`
