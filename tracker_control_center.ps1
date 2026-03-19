@@ -72,7 +72,7 @@ function Sync-ExtensionDefaultsFromConfig {
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "CCLMS Tracker Control Center"
-$form.Size = New-Object System.Drawing.Size(760, 620)
+$form.Size = New-Object System.Drawing.Size(900, 620)
 $form.StartPosition = "CenterScreen"
 
 $title = New-Object System.Windows.Forms.Label
@@ -85,17 +85,17 @@ $form.Controls.Add($title)
 $statusLabel = New-Object System.Windows.Forms.Label
 $statusLabel.Text = "Loading status..."
 $statusLabel.AutoSize = $false
-$statusLabel.Size = New-Object System.Drawing.Size(700, 40)
+$statusLabel.Size = New-Object System.Drawing.Size(840, 40)
 $statusLabel.Location = New-Object System.Drawing.Point(20, 58)
 $form.Controls.Add($statusLabel)
 
 $fields = @(
-    @{ Label = "CRM Base URL"; Name = "site_url"; X = 20; Y = 110; Width = 330 },
-    @{ Label = "API Key"; Name = "api_key"; X = 380; Y = 110; Width = 330 },
-    @{ Label = "API Secret"; Name = "api_secret"; X = 20; Y = 180; Width = 330; Secret = $true },
-    @{ Label = "Device ID"; Name = "device_id"; X = 380; Y = 180; Width = 330 },
-    @{ Label = "GitHub Repo"; Name = "github_repo"; X = 20; Y = 250; Width = 330 },
-    @{ Label = "GitHub Asset"; Name = "github_release_asset"; X = 380; Y = 250; Width = 330 }
+    @{ Label = "CRM Base URL"; Name = "site_url"; X = 20; Y = 110; Width = 400 },
+    @{ Label = "API Key"; Name = "api_key"; X = 450; Y = 110; Width = 400 },
+    @{ Label = "API Secret"; Name = "api_secret"; X = 20; Y = 180; Width = 400; Secret = $true },
+    @{ Label = "Device ID"; Name = "device_id"; X = 450; Y = 180; Width = 400 },
+    @{ Label = "GitHub Repo"; Name = "github_repo"; X = 20; Y = 250; Width = 400 },
+    @{ Label = "GitHub Asset"; Name = "github_release_asset"; X = 450; Y = 250; Width = 400 }
 )
 
 $textBoxes = @{}
@@ -120,13 +120,13 @@ foreach ($field in $fields) {
 $mapsCheckbox = New-Object System.Windows.Forms.CheckBox
 $mapsCheckbox.Text = "Enable browser extension / Google Maps helper defaults"
 $mapsCheckbox.Location = New-Object System.Drawing.Point(20, 324)
-$mapsCheckbox.Size = New-Object System.Drawing.Size(340, 24)
+$mapsCheckbox.Size = New-Object System.Drawing.Size(400, 24)
 $form.Controls.Add($mapsCheckbox)
 
 $chatCheckbox = New-Object System.Windows.Forms.CheckBox
 $chatCheckbox.Text = "Enable Google Chat notices in extension defaults"
-$chatCheckbox.Location = New-Object System.Drawing.Point(380, 324)
-$chatCheckbox.Size = New-Object System.Drawing.Size(330, 24)
+$chatCheckbox.Location = New-Object System.Drawing.Point(450, 324)
+$chatCheckbox.Size = New-Object System.Drawing.Size(400, 24)
 $form.Controls.Add($chatCheckbox)
 
 $logBox = New-Object System.Windows.Forms.TextBox
@@ -134,7 +134,7 @@ $logBox.Multiline = $true
 $logBox.ScrollBars = "Vertical"
 $logBox.ReadOnly = $true
 $logBox.Location = New-Object System.Drawing.Point(20, 430)
-$logBox.Size = New-Object System.Drawing.Size(690, 130)
+$logBox.Size = New-Object System.Drawing.Size(830, 130)
 $form.Controls.Add($logBox)
 
 function Append-Log {
@@ -145,7 +145,11 @@ function Append-Log {
 function Refresh-UiFromConfig {
     $cfg = Read-TrackerConfig
     foreach ($key in $textBoxes.Keys) {
-        $textBoxes[$key].Text = [string]($cfg[$key] ?? "")
+        $value = ""
+        if ($cfg.ContainsKey($key) -and $null -ne $cfg[$key]) {
+            $value = [string]$cfg[$key]
+        }
+        $textBoxes[$key].Text = $value
     }
     if (-not $textBoxes["device_id"].Text) {
         $textBoxes["device_id"].Text = $env:COMPUTERNAME
@@ -177,59 +181,29 @@ $buttons = @(
             Refresh-UiFromConfig
         }
     },
-    @{ Text = "Open Setup UI"; X = 140; Y = 370; Action = {
+    @{ Text = "Open Setup UI"; X = 160; Y = 370; Action = {
             Invoke-DetachedPowerShell -FilePath $setupScript
             Append-Log "Opened setup_config.ps1"
         }
     },
-    @{ Text = "Sync Extension"; X = 260; Y = 370; Action = {
+    @{ Text = "Sync Extension"; X = 300; Y = 370; Action = {
             $cfg = Collect-ConfigFromUi
             Write-TrackerConfig -Config $cfg
             Sync-ExtensionDefaultsFromConfig
             Append-Log "Synced browser extension defaults from config.json"
         }
     },
-    @{ Text = "Build EXE"; X = 380; Y = 370; Action = {
+    @{ Text = "Build EXE"; X = 440; Y = 370; Action = {
             Invoke-DetachedPowerShell -FilePath $buildScript
             Append-Log "Started build_exe.ps1"
         }
     },
-    @{ Text = "Install / Refresh"; X = 500; Y = 370; Action = {
+    @{ Text = "Install / Refresh"; X = 580; Y = 370; Action = {
             Invoke-DetachedPowerShell -FilePath $installScript
             Append-Log "Started install_service.ps1"
         }
     },
-    @{ Text = "Run Agent"; X = 20; Y = 400; Action = {
-            Invoke-DetachedPowerShell -FilePath $runAgentScript
-            Append-Log "Started run_agent.ps1"
-        }
-    },
-    @{ Text = "Stop Tracker"; X = 140; Y = 400; Action = {
-            try {
-                Stop-ScheduledTask -TaskName "CCLMS-Tracker" -ErrorAction SilentlyContinue | Out-Null
-            } catch {}
-            Get-Process cclms-tracker -ErrorAction SilentlyContinue | Stop-Process -Force
-            Append-Log "Stopped tracker task and process"
-            Refresh-UiFromConfig
-        }
-    },
-    @{ Text = "Start Tracker"; X = 260; Y = 400; Action = {
-            Start-ScheduledTask -TaskName "CCLMS-Tracker"
-            Append-Log "Started scheduled task"
-            Refresh-UiFromConfig
-        }
-    },
-    @{ Text = "Open Extension Folder"; X = 380; Y = 400; Action = {
-            Start-Process explorer.exe $extensionPath
-            Append-Log "Opened browser_extension folder"
-        }
-    },
-    @{ Text = "Refresh Status"; X = 540; Y = 400; Action = {
-            Refresh-UiFromConfig
-            Append-Log "Refreshed status"
-        }
-    },
-    @{ Text = "Install All"; X = 540; Y = 370; Action = {
+    @{ Text = "Install All"; X = 720; Y = 370; Action = {
             try {
                 $cfg = Collect-ConfigFromUi
                 Write-TrackerConfig -Config $cfg
@@ -251,6 +225,36 @@ $buttons = @(
                 [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Install All Failed")
             }
         }
+    },
+    @{ Text = "Run Agent"; X = 20; Y = 405; Action = {
+            Invoke-DetachedPowerShell -FilePath $runAgentScript
+            Append-Log "Started run_agent.ps1"
+        }
+    },
+    @{ Text = "Stop Tracker"; X = 160; Y = 405; Action = {
+            try {
+                Stop-ScheduledTask -TaskName "CCLMS-Tracker" -ErrorAction SilentlyContinue | Out-Null
+            } catch {}
+            Get-Process cclms-tracker -ErrorAction SilentlyContinue | Stop-Process -Force
+            Append-Log "Stopped tracker task and process"
+            Refresh-UiFromConfig
+        }
+    },
+    @{ Text = "Start Tracker"; X = 300; Y = 405; Action = {
+            Start-ScheduledTask -TaskName "CCLMS-Tracker"
+            Append-Log "Started scheduled task"
+            Refresh-UiFromConfig
+        }
+    },
+    @{ Text = "Open Extension Folder"; X = 440; Y = 405; Action = {
+            Start-Process explorer.exe $extensionPath
+            Append-Log "Opened browser_extension folder"
+        }
+    },
+    @{ Text = "Refresh Status"; X = 580; Y = 405; Action = {
+            Refresh-UiFromConfig
+            Append-Log "Refreshed status"
+        }
     }
 )
 
@@ -258,7 +262,7 @@ foreach ($buttonDef in $buttons) {
     $button = New-Object System.Windows.Forms.Button
     $button.Text = $buttonDef.Text
     $button.Location = New-Object System.Drawing.Point($buttonDef.X, $buttonDef.Y)
-    $button.Size = New-Object System.Drawing.Size(140, 26)
+    $button.Size = New-Object System.Drawing.Size(120, 28)
     $button.Add_Click($buttonDef.Action)
     $form.Controls.Add($button)
 }
