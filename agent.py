@@ -23,6 +23,7 @@ import win32gui
 import win32process
 from PIL import ImageGrab
 from embedded_defaults import DEFAULT_CONFIG
+from map_intelligence import MapIntelligenceAssistant
 from version import __version__
 
 
@@ -129,6 +130,15 @@ class TrackerAgent:
         self.biometric_sync_enabled = bool(self.config.get("biometric_sync_enabled", False))
         self.biometric_device = dict(self.config.get("biometric_device") or {})
         self.last_biometric_sync = datetime.now(timezone.utc) - timedelta(minutes=int(self.config.get("biometric_sync_interval_minutes", 15)))
+        self.map_assistant = MapIntelligenceAssistant(
+            base_dir=self.base_dir,
+            config=self.config,
+            device_id=self.device_id,
+            call_method=self._call,
+            post_method=self._post,
+            notify_callback=self._show_notification,
+            logger=logging.getLogger(__name__),
+        )
 
     def _setup_logging(self):
         log_path = self.base_dir / (self.config.get("log_file") or "tracker.log")
@@ -916,6 +926,7 @@ try {
             self.config["biometric_sync_interval_minutes"] = int(message["biometric_sync_interval_minutes"])
         if message.get("biometric_device") is not None:
             self.biometric_device = dict(message.get("biometric_device") or {})
+        self.map_assistant.update_policy(message)
 
         self.config["heartbeat_seconds"] = int(message.get("heartbeat_seconds") or self.config.get("heartbeat_seconds", 60))
         self.config["snapshot_min_minutes"] = int(message.get("snapshot_min_minutes") or self.config.get("snapshot_min_minutes", 45))
@@ -982,6 +993,9 @@ try {
                     self._poll_notifications(now)
                     self._sync_biometric_if_due(now)
 
+                    recent_browser_rows = self._recent_browser_rows()
+                    self.map_assistant.process_cycle(now, process_name, window_title, recent_browser_rows)
+
                     self._send_activity(
                         {
                             "event_type": "Heartbeat",
@@ -997,7 +1011,7 @@ try {
 
                     self._handle_inferred_call(process_name, window_title)
 
-                    for url, title, last_visit_time in self._recent_browser_rows():
+                    for url, title, last_visit_time in recent_browser_rows:
                         visited_at = chrome_time_to_datetime(last_visit_time) or now
                         self._send_activity(
                             {

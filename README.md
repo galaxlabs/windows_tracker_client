@@ -25,6 +25,7 @@ Optional CRM-driven extensions can also be enabled without breaking the normal t
 - productivity rules returned by policy
 - device actions polled from CRM
 - local repeating notifications polled from CRM
+- map intelligence / scouting assistance with local SQLite cache
 - biometric attendance sync using CRM-provided device settings
 
 ## Embedded Defaults
@@ -151,6 +152,7 @@ Other optional runtime controls:
 - `device_actions_poll_seconds`
 - `notifications_enabled`
 - `notifications_poll_seconds`
+- `map_intelligence_enabled`
 - `biometric_sync_enabled`
 - `biometric_sync_interval_minutes`
 
@@ -263,3 +265,4 @@ hostname
 - On startup, the agent calls `cclms.api.desktop_tracker.get_tracking_policy` and validates that the current `device_id` is enrolled in `Tracker Device`.
 - The EXE writes a simple local log file named `tracker.log` next to the executable.
 - If CRM provides notifications, the agent caches them locally in `notification_rules.json` and shows repeating Windows popups until CRM stops sending them.
+- If CRM enables map intelligence, the agent maintains a local scouting cache in `scouting_cache.sqlite3` for ZIP guidance, lead duplicate checks, competitor caching, and scoped sync.
