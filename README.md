@@ -174,6 +174,7 @@ Release workflow:
 Workflow file:
 
 - [.github/workflows/release.yml](/home/dg/dg-b/windows_tracker_client/.github/workflows/release.yml)
+- [BACKEND_API_CONTRACT.md](/home/dg/dg-b/windows_tracker_client/BACKEND_API_CONTRACT.md)
 
 ## Install As Windows Service
 
