@@ -36,7 +36,21 @@ This folder contains a lightweight Chrome extension for Google Maps and optional
 2. Enable Developer mode.
 3. Click `Load unpacked`.
 4. Select this `browser_extension` folder.
-5. Open the extension options page and configure:
+5. Optional: prefill the extension defaults from the tracker config:
+
+```powershell
+.\sync_browser_extension_config.ps1
+```
+
+This reads:
+
+- [config.json](/c:/Users/AQN/data/windows_tracker_client_clean/config.json)
+
+and writes:
+
+- [browser_extension/local.defaults.js](/c:/Users/AQN/data/windows_tracker_client_clean/browser_extension/local.defaults.js)
+
+6. Open the extension options page and configure:
    - CRM base URL
    - auth mode
    - API token or cookie-session mode
@@ -50,3 +64,17 @@ Use:
 - [BROWSER_EXTENSION_BACKEND_CONTRACT.md](/c:/Users/AQN/Downloads/windows_tracker_client/browser_extension/BROWSER_EXTENSION_BACKEND_CONTRACT.md)
 
 The backend in `cclms` must implement the validation, prefill, competitor upsert, and optional browser notification APIs.
+
+## Auth Choice
+
+Best default for this extension:
+
+- use a scoped token for the extension
+
+Why:
+
+- simpler than cookie-session CORS handling from an extension origin
+- works on Google Maps pages without requiring the user to keep a CRM tab open
+- avoids fragile session/cookie dependency across tabs
+
+If you later implement stronger browser-session integration in CRM, cookie-session mode can also be supported, but token mode is the practical default for now.

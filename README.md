@@ -287,6 +287,12 @@ This browser module is separate from the Windows tracker service. It is intended
 - open a prefilled ATM Lead flow
 - upsert competitor kiosks
 
+To prefill browser-extension defaults from the same tracker config used by the Windows agent:
+
+```powershell
+.\sync_browser_extension_config.ps1
+```
+
 ## Backend Handoff
 
 Use:

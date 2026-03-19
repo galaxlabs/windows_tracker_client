@@ -8,3 +8,4 @@ tracker.log
 config.json
 .update-check.json
 tracker_queue.sqlite3
+browser_extension/local.defaults.js

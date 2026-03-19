@@ -26,6 +26,8 @@ async function loadSettings() {
       node.value = settings[field] ?? "";
     }
   }
+  await refreshStorage();
+  await refreshLogs();
 }
 
 async function saveSettings() {
@@ -41,7 +43,34 @@ async function saveSettings() {
   const response = await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: payload });
   const status = document.getElementById("status");
   status.textContent = response?.ok ? "Settings saved." : (response?.error || "Save failed.");
+  await refreshStorage();
+  await refreshLogs();
+}
+
+async function refreshStorage() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_STORAGE_STATE" });
+  document.getElementById("storageView").textContent = response?.ok
+    ? JSON.stringify(response.data || {}, null, 2)
+    : (response?.error || "Failed to load storage");
+}
+
+async function refreshLogs() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_DEBUG_LOGS" });
+  document.getElementById("logsView").textContent = response?.ok
+    ? JSON.stringify(response.logs || [], null, 2)
+    : (response?.error || "Failed to load logs");
+}
+
+async function clearLogs() {
+  const response = await chrome.runtime.sendMessage({ type: "CLEAR_DEBUG_LOGS" });
+  const status = document.getElementById("status");
+  status.textContent = response?.ok ? "Debug logs cleared." : (response?.error || "Failed to clear logs.");
+  await refreshLogs();
+  await refreshStorage();
 }
 
 document.getElementById("saveButton").addEventListener("click", saveSettings);
+document.getElementById("refreshStorageButton").addEventListener("click", refreshStorage);
+document.getElementById("refreshLogsButton").addEventListener("click", refreshLogs);
+document.getElementById("clearLogsButton").addEventListener("click", clearLogs);
 loadSettings();

@@ -1,3 +1,8 @@
+try {
+  importScripts("local.defaults.js");
+} catch (error) {
+}
+
 importScripts("shared/storage.js", "shared/api.js");
 
 const DEFAULTS = {
@@ -16,7 +21,22 @@ const DEFAULTS = {
   employee: ""
 };
 
+if (typeof CCLMS_LOCAL_DEFAULTS === "object" && CCLMS_LOCAL_DEFAULTS) {
+  Object.assign(DEFAULTS, CCLMS_LOCAL_DEFAULTS);
+}
+
 const inMemoryCache = new Map();
+
+async function logEvent(scope, event, details) {
+  try {
+    await CCLMSStorage.appendLog({
+      scope,
+      event,
+      details: details || {}
+    });
+  } catch (error) {
+  }
+}
 
 function cacheKey(prefix, payload) {
   return `${prefix}:${JSON.stringify(payload)}`;
@@ -56,31 +76,61 @@ async function validatePlace(place) {
   };
   const cached = await getCached("validate", payload);
   if (cached) {
+    await logEvent("background", "validate_place_cache_hit", {
+      fingerprint: place.place_fingerprint || "",
+      name: place.name || ""
+    });
     return cached;
   }
+  await logEvent("background", "validate_place_request", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.name || ""
+  });
   const result = await CCLMSApi.post(settings, settings.validateMethod, payload);
   setCached("validate", payload, result);
+  await logEvent("background", "validate_place_success", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.name || ""
+  });
   return result;
 }
 
 async function saveCompetitor(place) {
   const settings = await getSettings();
-  return await CCLMSApi.post(settings, settings.competitorMethod, {
+  await logEvent("background", "save_competitor_request", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.name || ""
+  });
+  const result = await CCLMSApi.post(settings, settings.competitorMethod, {
     place,
     device_id: settings.deviceId || "",
     employee: settings.employee || "",
     source_system: "chrome_extension"
   });
+  await logEvent("background", "save_competitor_success", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.name || ""
+  });
+  return result;
 }
 
 async function prefillLead(place) {
   const settings = await getSettings();
-  return await CCLMSApi.post(settings, settings.prefillMethod, {
+  await logEvent("background", "prefill_lead_request", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.name || ""
+  });
+  const result = await CCLMSApi.post(settings, settings.prefillMethod, {
     place,
     device_id: settings.deviceId || "",
     employee: settings.employee || "",
     source_system: "google_maps"
   });
+  await logEvent("background", "prefill_lead_success", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.name || ""
+  });
+  return result;
 }
 
 async function getBrowserNotifications(pageContext) {
@@ -111,8 +161,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true, settings: await getSettings() });
         return;
       }
+      if (message.type === "LOG_EVENT") {
+        await logEvent(message.scope || "extension", message.event || "log", message.details || {});
+        sendResponse({ ok: true });
+        return;
+      }
+      if (message.type === "GET_STORAGE_STATE") {
+        sendResponse({
+          ok: true,
+          data: await chrome.storage.local.get(null)
+        });
+        return;
+      }
+      if (message.type === "GET_DEBUG_LOGS") {
+        sendResponse({
+          ok: true,
+          logs: await CCLMSStorage.getValue("debugLogs", [])
+        });
+        return;
+      }
+      if (message.type === "CLEAR_DEBUG_LOGS") {
+        await CCLMSStorage.clearLogs();
+        sendResponse({ ok: true });
+        return;
+      }
       if (message.type === "SAVE_SETTINGS") {
         await CCLMSStorage.saveSettings(message.settings || {});
+        await logEvent("background", "save_settings", {
+          keys: Object.keys(message.settings || {})
+        });
         sendResponse({ ok: true });
         return;
       }
@@ -130,6 +207,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       if (message.type === "OPEN_URL") {
         chrome.tabs.create({ url: message.url });
+        await logEvent("background", "open_url", { url: message.url || "" });
         sendResponse({ ok: true });
         return;
       }
@@ -143,6 +221,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       sendResponse({ ok: false, error: "Unsupported message type" });
     } catch (error) {
+      await logEvent("background", "message_error", {
+        type: message?.type || "",
+        error: error.message || String(error)
+      });
       sendResponse({ ok: false, error: error.message || String(error) });
     }
   })();

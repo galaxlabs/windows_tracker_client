@@ -148,6 +148,18 @@
     return chrome.runtime.sendMessage(message);
   }
 
+  async function logContentEvent(event, details) {
+    try {
+      await sendMessage({
+        type: "LOG_EVENT",
+        scope: "maps_content",
+        event,
+        details: details || {}
+      });
+    } catch (error) {
+    }
+  }
+
   async function openUrl(url) {
     await sendMessage({ type: "OPEN_URL", url });
   }
@@ -155,6 +167,7 @@
   async function createPrefilledLead(place) {
     const response = await sendMessage({ type: "PREFILL_LEAD", place });
     if (!response?.ok) {
+      logContentEvent("prefill_lead_error", { error: response?.error || "unknown" });
       renderOverlay(place, currentValidation, response?.error || "Failed to prefill ATM lead");
       return;
     }
@@ -184,6 +197,7 @@
   async function saveCompetitor(place) {
     const response = await sendMessage({ type: "SAVE_COMPETITOR", place });
     if (!response?.ok) {
+      logContentEvent("save_competitor_error", { error: response?.error || "unknown" });
       renderOverlay(place, currentValidation, response?.error || "Failed to save competitor");
       return;
     }
@@ -204,10 +218,18 @@
     renderOverlay(place, null, null);
     const response = await sendMessage({ type: "VALIDATE_PLACE", place });
     if (!response?.ok) {
+      logContentEvent("validate_place_error", {
+        error: response?.error || "unknown",
+        fingerprint
+      });
       renderOverlay(place, null, response?.error || "Validation failed");
       return;
     }
     currentValidation = response.data;
+    logContentEvent("validate_place_success", {
+      fingerprint,
+      name: place.name || ""
+    });
     renderOverlay(place, currentValidation, null);
   }
 
