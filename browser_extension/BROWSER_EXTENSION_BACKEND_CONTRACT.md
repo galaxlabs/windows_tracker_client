@@ -16,15 +16,31 @@ Request:
     "source_url": "https://www.google.com/maps/place/...",
     "source_type": "google_maps",
     "name": "ABC Fuel",
+    "business_name": "ABC Fuel",
+    "normalized_business_name": "abc fuel",
     "address": "123 Main St, Dallas, TX 75001, USA",
+    "normalized_address": "123 main st dallas tx 75001 usa",
     "phone": "1234567890",
     "website": "https://example.com",
     "category": "Gas station",
     "coordinates": {"lat": 32.99, "lng": -96.82},
     "zip_code": "75001",
-    "city": "",
+    "city": "Dallas",
     "state": "TX",
-    "place_fingerprint": "abc fuel|123 main st..."
+    "place_fingerprint": "abc fuel|123 main st...",
+    "dedup_keys": {
+      "business_name": "ABC Fuel",
+      "normalized_business_name": "abc fuel",
+      "address": "123 Main St, Dallas, TX 75001, USA",
+      "normalized_address": "123 main st dallas tx 75001 usa",
+      "zip_code": "75001",
+      "city": "Dallas",
+      "state": "TX",
+      "latitude": 32.99,
+      "longitude": -96.82,
+      "phone": "1234567890",
+      "website": "https://example.com"
+    }
   },
   "device_id": "WIN-LAPTOP-01",
   "employee": "EMP-0001",
@@ -47,11 +63,21 @@ Response:
     "zone_color": "green",
     "recommendation": "Open Existing Lead",
     "duplicate_reason": "Address and business name match",
+    "matched_by": "business_name + normalized_address + zip_code",
     "competitor_count": 4,
     "open_existing_lead_url": "https://crm.example.com/app/atm-lead/ATM-LEAD-0001"
   }
 }
 ```
+
+Backend should validate ATM Lead duplicates using a layered strategy:
+
+- exact lead or location-lock match if available
+- `normalized_business_name + normalized_address + zip_code`
+- `business_name + zip_code + city`
+- nearby coordinate match inside a small configured radius
+- phone match when available
+- website/domain match when available
 
 ## 2. Prefill Lead Endpoint
 
@@ -65,7 +91,9 @@ Request:
 {
   "place": {
     "name": "ABC Fuel",
+    "business_name": "ABC Fuel",
     "address": "123 Main St, Dallas, TX 75001, USA",
+    "city": "Dallas",
     "zip_code": "75001",
     "state": "TX",
     "phone": "1234567890",
@@ -113,7 +141,9 @@ Request:
 {
   "place": {
     "name": "ABC Fuel",
+    "business_name": "ABC Fuel",
     "address": "123 Main St, Dallas, TX 75001, USA",
+    "city": "Dallas",
     "zip_code": "75001",
     "state": "TX",
     "coordinates": {"lat": 32.99, "lng": -96.82},

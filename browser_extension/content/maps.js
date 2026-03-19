@@ -28,32 +28,56 @@
     const phone = CCLMSCommon.normalizeWhitespace(phoneButton?.textContent || "");
     const website = websiteButton?.getAttribute("href") || websiteButton?.textContent || "";
     const coordinates = CCLMSCommon.parseCoordinatesFromUrl(location.href);
+    const locationParts = extractLocationParts(address);
+    const genericMapTitle = !name || /^google maps$/i.test(name);
 
     const place = {
       source_url: location.href,
       source_type: "google_maps",
-      name,
+      name: genericMapTitle ? "" : name,
       address,
       phone,
       website: CCLMSCommon.normalizeWhitespace(website),
       category,
       coordinates,
-      zip_code: extractZip(address),
-      city: "",
-      state: extractState(address)
+      zip_code: locationParts.zip_code,
+      city: locationParts.city,
+      state: locationParts.state,
+      business_name: genericMapTitle ? "" : name,
+      normalized_business_name: genericMapTitle ? "" : CCLMSCommon.normalizeBusinessName(name),
+      normalized_address: CCLMSCommon.normalizeAddress(address)
+    };
+    place.dedup_keys = {
+      business_name: place.business_name,
+      normalized_business_name: place.normalized_business_name,
+      address: place.address,
+      normalized_address: place.normalized_address,
+      zip_code: place.zip_code,
+      city: place.city,
+      state: place.state,
+      latitude: place.coordinates?.lat || null,
+      longitude: place.coordinates?.lng || null,
+      phone: place.phone || "",
+      website: place.website || ""
     };
     place.place_fingerprint = CCLMSCommon.fingerprint(place);
     return place;
   }
 
-  function extractZip(address) {
-    const match = (address || "").match(/\b(\d{5})(?:-\d{4})?\b/);
-    return match ? match[1] : "";
+  function extractLocationParts(address) {
+    const text = CCLMSCommon.normalizeWhitespace(address);
+    const zipMatch = text.match(/\b(\d{5})(?:-\d{4})?\b/);
+    const stateZipMatch = text.match(/\b([A-Z]{2})\s+(\d{5})(?:-\d{4})?\b/);
+    const cityStateZipMatch = text.match(/,\s*([^,]+),\s*([A-Z]{2})\s+\d{5}(?:-\d{4})?/);
+    return {
+      zip_code: zipMatch ? zipMatch[1] : "",
+      state: stateZipMatch ? stateZipMatch[1] : "",
+      city: cityStateZipMatch ? CCLMSCommon.normalizeWhitespace(cityStateZipMatch[1]) : ""
+    };
   }
 
-  function extractState(address) {
-    const match = (address || "").match(/\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/);
-    return match ? match[1] : "";
+  function canCreateLead(place) {
+    return Boolean(place?.business_name && place?.address && place?.zip_code);
   }
 
   function ensureOverlay() {
@@ -87,9 +111,9 @@
       return;
     }
 
-    if (!place?.name) {
+    if (!place?.business_name) {
       card.className = "cclms-card cclms-card--idle";
-      body.textContent = "Waiting for a Google Maps place...";
+      body.textContent = "Open a real Google Maps place panel to validate it.";
       return;
     }
 
@@ -98,11 +122,13 @@
     card.className = `cclms-card cclms-card--${mapColor(zoneColor)}`;
 
     const lines = [
-      `<strong>${escapeHtml(place.name)}</strong>`,
+      `<strong>${escapeHtml(place.business_name || place.name)}</strong>`,
       place.address ? escapeHtml(place.address) : "",
+      place.city || place.state || place.zip_code ? escapeHtml([place.city, place.state, place.zip_code].filter(Boolean).join(", ")) : "",
       info.exists_in_atm_leads ? `Already exists: ${escapeHtml(info.workflow_state || "Existing")}` : "",
       info.zip_score !== undefined ? `ZIP score: ${escapeHtml(String(info.zip_score))}` : "",
       info.competitor_count !== undefined ? `Competitors: ${escapeHtml(String(info.competitor_count))}` : "",
+      info.duplicate_reason ? `Duplicate: ${escapeHtml(info.duplicate_reason)}` : "",
       info.recommendation ? `Action: ${escapeHtml(info.recommendation)}` : ""
     ].filter(Boolean);
     body.innerHTML = lines.join("<br>");
@@ -110,7 +136,9 @@
     if (info.open_existing_lead_url) {
       actions.appendChild(actionButton("Open Existing Lead", () => openUrl(info.open_existing_lead_url)));
     }
-    actions.appendChild(actionButton("Create Prefilled ATM Lead", () => createPrefilledLead(place)));
+    if (canCreateLead(place)) {
+      actions.appendChild(actionButton("Create Prefilled ATM Lead", () => createPrefilledLead(place)));
+    }
     actions.appendChild(actionButton("Save Competitor", () => saveCompetitor(place)));
     actions.appendChild(actionButton("Refresh Validation", () => validateCurrentPlace(true)));
   }
@@ -167,7 +195,11 @@
   async function createPrefilledLead(place) {
     const response = await sendMessage({ type: "PREFILL_LEAD", place });
     if (!response?.ok) {
-      logContentEvent("prefill_lead_error", { error: response?.error || "unknown" });
+      logContentEvent("prefill_lead_error", {
+        error: response?.error || "unknown",
+        name: place.business_name || place.name || "",
+        zip_code: place.zip_code || ""
+      });
       renderOverlay(place, currentValidation, response?.error || "Failed to prefill ATM lead");
       return;
     }
@@ -181,12 +213,14 @@
       return;
     }
     const query = new URLSearchParams({
-      business_name: place.name || "",
+      business_name: place.business_name || place.name || "",
       address: place.address || "",
+      city: place.city || "",
       zip_code: place.zip_code || "",
       state: place.state || "",
       phone: place.phone || "",
       website: place.website || "",
+      business_type: place.category || "",
       latitude: place.coordinates?.lat || "",
       longitude: place.coordinates?.lng || "",
       source: "Google Maps"
@@ -197,7 +231,11 @@
   async function saveCompetitor(place) {
     const response = await sendMessage({ type: "SAVE_COMPETITOR", place });
     if (!response?.ok) {
-      logContentEvent("save_competitor_error", { error: response?.error || "unknown" });
+      logContentEvent("save_competitor_error", {
+        error: response?.error || "unknown",
+        name: place.business_name || place.name || "",
+        zip_code: place.zip_code || ""
+      });
       renderOverlay(place, currentValidation, response?.error || "Failed to save competitor");
       return;
     }
@@ -206,7 +244,7 @@
 
   async function validateCurrentPlace(forceRefresh) {
     const place = extractPlace();
-    if (!place.name || !place.address) {
+    if (!place.business_name || !place.address) {
       renderOverlay(place, null, null);
       return;
     }
@@ -220,7 +258,11 @@
     if (!response?.ok) {
       logContentEvent("validate_place_error", {
         error: response?.error || "unknown",
-        fingerprint
+        fingerprint,
+        name: place.business_name || place.name || "",
+        zip_code: place.zip_code || "",
+        city: place.city || "",
+        state: place.state || ""
       });
       renderOverlay(place, null, response?.error || "Validation failed");
       return;
@@ -228,7 +270,10 @@
     currentValidation = response.data;
     logContentEvent("validate_place_success", {
       fingerprint,
-      name: place.name || ""
+      name: place.business_name || place.name || "",
+      zip_code: place.zip_code || "",
+      city: place.city || "",
+      state: place.state || ""
     });
     renderOverlay(place, currentValidation, null);
   }

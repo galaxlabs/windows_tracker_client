@@ -12,6 +12,23 @@
       return (value || "").replace(/\s+/g, " ").trim();
     },
 
+    normalizeBusinessName(value) {
+      return this.normalizeWhitespace(value)
+        .toLowerCase()
+        .replace(/[^\w\s]/g, "")
+        .replace(/\b(llc|inc|corp|corporation|ltd|co|company)\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    },
+
+    normalizeAddress(value) {
+      return this.normalizeWhitespace(value)
+        .toLowerCase()
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    },
+
     fingerprint(place) {
       const fields = [
         place.name || "",

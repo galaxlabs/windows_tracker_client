@@ -84,13 +84,19 @@ async function validatePlace(place) {
   }
   await logEvent("background", "validate_place_request", {
     fingerprint: place.place_fingerprint || "",
-    name: place.name || ""
+    name: place.business_name || place.name || "",
+    zip_code: place.zip_code || "",
+    city: place.city || "",
+    state: place.state || ""
   });
   const result = await CCLMSApi.post(settings, settings.validateMethod, payload);
   setCached("validate", payload, result);
   await logEvent("background", "validate_place_success", {
     fingerprint: place.place_fingerprint || "",
-    name: place.name || ""
+    name: place.business_name || place.name || "",
+    zip_code: place.zip_code || "",
+    city: place.city || "",
+    state: place.state || ""
   });
   return result;
 }
