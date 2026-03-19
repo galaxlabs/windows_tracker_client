@@ -118,15 +118,10 @@ function Install-WithScheduledTask {
 
     $actionArgs = '"' + $ConfigFilePath + '"'
     $action = New-ScheduledTaskAction -Execute $ExecutablePath -Argument $actionArgs -WorkingDirectory $WorkingDirectory
-<<<<<<< HEAD
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-    $trigger.Delay = "PT1M"
-=======
-    $triggers = @(
-        New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-        New-ScheduledTaskTrigger -AtStartup
-    )
->>>>>>> a086edfe20fb9ff0ca2355721b3b1bf389fe16f0
+    $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $logonTrigger.Delay = "PT1M"
+    $startupTrigger = New-ScheduledTaskTrigger -AtStartup
+    $triggers = @($logonTrigger, $startupTrigger)
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances Ignore -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 

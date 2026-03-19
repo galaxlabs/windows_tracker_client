@@ -233,6 +233,32 @@ You can check whether it is installed and running with:
 .\check_tracker_status.ps1
 ```
 
+## Control Center
+
+For USB rollout and simple local operation, use:
+
+```powershell
+.\tracker_control_center.ps1
+```
+
+or double-click:
+
+```bat
+tracker_control_center.bat
+```
+
+This small UI uses [config.json](/c:/Users/AQN/data/windows_tracker_client_clean/config.json) as the single source of truth and can:
+
+- edit and save tracker config
+- sync browser extension defaults from the same config
+- build the EXE
+- install or refresh the scheduled task
+- run one-click `Install All`
+- run the agent
+- start or stop the tracker
+- open the browser extension folder
+- show tracker task/process status
+
 ## Development Run
 
 ```powershell
