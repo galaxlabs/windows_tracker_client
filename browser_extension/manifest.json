@@ -44,6 +44,16 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/lead_layer_bridge.js"
+      ],
+      "matches": [
+        "https://www.google.com/maps/*"
+      ]
+    }
+  ],
   "options_page": "options.html",
   "action": {
     "default_title": "CCLMS Map Assistant",
