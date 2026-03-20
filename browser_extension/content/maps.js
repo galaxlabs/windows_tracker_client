@@ -19,6 +19,42 @@
     return CCLMSCommon.normalizeWhitespace(node?.textContent || "");
   }
 
+  function fullAddressCandidate(value) {
+    const text = CCLMSCommon.normalizeWhitespace(value || "");
+    if (!text) {
+      return "";
+    }
+    if (/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/.test(text)) {
+      return text;
+    }
+    return text;
+  }
+
+  function extractBestAddress(addressButton) {
+    const candidates = [];
+    const pushCandidate = (value) => {
+      const text = fullAddressCandidate(value);
+      if (text) {
+        candidates.push(text);
+      }
+    };
+
+    pushCandidate(addressButton?.textContent);
+    pushCandidate(addressButton?.getAttribute("aria-label"));
+    pushCandidate(addressButton?.getAttribute("data-tooltip"));
+    pushCandidate(addressButton?.title);
+
+    document.querySelectorAll("[data-item-id^='address'], button[aria-label*='Address'], div[aria-label*='Address']").forEach((node) => {
+      pushCandidate(node.textContent);
+      pushCandidate(node.getAttribute("aria-label"));
+      pushCandidate(node.getAttribute("data-tooltip"));
+      pushCandidate(node.title);
+    });
+
+    const preferred = candidates.find((item) => /\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/.test(item));
+    return preferred || candidates.sort((a, b) => b.length - a.length)[0] || "";
+  }
+
   function extractPlace() {
     const name =
       textFromSelector("h1.DUwDvf") ||
@@ -29,7 +65,7 @@
     const websiteButton = findButtonByDataItem("authority");
     const category = textFromSelector("button[jsaction*='pane.rating.category']");
     const openingHours = extractOpeningHours();
-    const address = CCLMSCommon.normalizeWhitespace(addressButton?.textContent || "");
+    const address = extractBestAddress(addressButton);
     const phone = CCLMSCommon.normalizeWhitespace(phoneButton?.textContent || "");
     const website = websiteButton?.getAttribute("href") || websiteButton?.textContent || "";
     const coordinates = CCLMSCommon.parseCoordinatesFromUrl(location.href);
