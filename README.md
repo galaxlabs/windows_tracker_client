@@ -286,9 +286,9 @@ This small UI uses `config.json` as the single source of truth and can:
 - sync browser extension defaults from the same config
 - build the EXE
 - install or refresh the scheduled task
-- run one-click `Install All`
+- run one-click `Install / Update App`
 - run the agent
-- start or stop the tracker
+- manually start or stop the tracker when troubleshooting
 - open the browser extension folder
 - show tracker task/process status
 

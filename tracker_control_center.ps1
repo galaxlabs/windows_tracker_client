@@ -57,6 +57,20 @@ function Invoke-DetachedPowerShell {
     Start-Process powershell -ArgumentList @("-ExecutionPolicy", "Bypass", "-File", $FilePath) -WorkingDirectory $projectRoot
 }
 
+function Invoke-ElevatedPowerShellFile {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments = @()
+    )
+
+    $argumentList = @("-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $FilePath)) + $Arguments
+    Start-Process powershell -Verb RunAs -ArgumentList $argumentList -WorkingDirectory $projectRoot
+}
+
+function Test-BuiltTrackerExists {
+    return Test-Path (Join-Path $projectRoot "dist\cclms-tracker.exe")
+}
+
 function Sync-ExtensionDefaultsFromConfig {
     & powershell -ExecutionPolicy Bypass -File $syncExtensionScript | Out-Null
     if ($mapsCheckbox.Checked -or $chatCheckbox.Checked) {
@@ -85,7 +99,7 @@ $form.Controls.Add($title)
 $statusLabel = New-Object System.Windows.Forms.Label
 $statusLabel.Text = "Loading status..."
 $statusLabel.AutoSize = $false
-$statusLabel.Size = New-Object System.Drawing.Size(860, 40)
+$statusLabel.Size = New-Object System.Drawing.Size(860, 58)
 $statusLabel.Location = New-Object System.Drawing.Point(20, 58)
 $form.Controls.Add($statusLabel)
 
@@ -257,7 +271,7 @@ function Refresh-UiFromConfig {
     $verifySslCheckbox.Checked = if ($cfg.ContainsKey("verify_ssl")) { [bool]$cfg["verify_ssl"] } else { $true }
     $mapsCheckbox.Checked = $true
     $chatCheckbox.Checked = $false
-    $statusLabel.Text = "$(Get-TaskInfoText)`r`n$(Get-TrackerProcessText)"
+    $statusLabel.Text = "$(Get-TaskInfoText)`r`n$(Get-TrackerProcessText)`r`nStandard flow: click 'Install / Update App'. The tracker task auto-starts the app after install."
 }
 
 function Collect-ConfigFromUi {
@@ -313,12 +327,12 @@ $buttons = @(
             Append-Log "Started build_exe.ps1"
         }
     },
-    @{ Text = "Install / Refresh"; X = 580; Y = 470; Action = {
-            Start-Process powershell -ArgumentList @("-ExecutionPolicy", "Bypass", "-File", $installScript, "-InstallMode", [string]$installModeCombo.SelectedItem) -WorkingDirectory $projectRoot
-            Append-Log "Started install_service.ps1 with mode $([string]$installModeCombo.SelectedItem)"
+    @{ Text = "Advanced Install"; X = 580; Y = 470; Action = {
+            Invoke-ElevatedPowerShellFile -FilePath $installScript -Arguments @("-InstallMode", [string]$installModeCombo.SelectedItem)
+            Append-Log "Requested elevated install_service.ps1 with mode $([string]$installModeCombo.SelectedItem)"
         }
     },
-    @{ Text = "Install All"; X = 720; Y = 470; Action = {
+    @{ Text = "Install / Update App"; X = 720; Y = 470; Action = {
             try {
                 $cfg = Collect-ConfigFromUi
                 Write-TrackerConfig -Config $cfg
@@ -327,24 +341,21 @@ $buttons = @(
                 Sync-ExtensionDefaultsFromConfig
                 Append-Log "Synced browser extension defaults"
 
-                & powershell -ExecutionPolicy Bypass -File $buildScript | Out-Null
-                Append-Log "Build complete"
-
-                & powershell -ExecutionPolicy Bypass -File $installScript -InstallMode ([string]$installModeCombo.SelectedItem) | Out-Null
-                Append-Log "Install / refresh complete"
-
-                try {
-                    Start-ScheduledTask -TaskName "CCLMS-Tracker" -ErrorAction SilentlyContinue
-                    Append-Log "Tracker task start requested"
-                } catch {
-                    Append-Log "Tracker task start request failed: $($_.Exception.Message)"
+                if (Test-BuiltTrackerExists) {
+                    Append-Log "Using existing dist\\cclms-tracker.exe release build"
+                } else {
+                    & powershell -ExecutionPolicy Bypass -File $buildScript | Out-Null
+                    Append-Log "Build complete because no local release build was found"
                 }
 
+                Invoke-ElevatedPowerShellFile -FilePath $installScript -Arguments @("-InstallMode", [string]$installModeCombo.SelectedItem)
+                Append-Log "Requested elevated install / refresh using the current release build"
+
                 Refresh-UiFromConfig
-                Append-Log "Install All finished and tracker activation was attempted"
+                Append-Log "Install / Update App finished. Approve the UAC prompt. The tracker task will auto-start the app."
             } catch {
-                Append-Log "Install All failed: $($_.Exception.Message)"
-                [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Install All Failed")
+                Append-Log "Install / Update App failed: $($_.Exception.Message)"
+                [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Install / Update App Failed")
             }
         }
     },
@@ -362,9 +373,9 @@ $buttons = @(
             Refresh-UiFromConfig
         }
     },
-    @{ Text = "Start Tracker"; X = 300; Y = 520; Action = {
+    @{ Text = "Start Tracker Now"; X = 300; Y = 520; Action = {
             Start-ScheduledTask -TaskName "CCLMS-Tracker"
-            Append-Log "Started scheduled task"
+            Append-Log "Manual tracker start requested"
             Refresh-UiFromConfig
         }
     },
@@ -390,6 +401,6 @@ foreach ($buttonDef in $buttons) {
 }
 
 Refresh-UiFromConfig
-Append-Log "Control Center ready. config.json is the source of truth."
+Append-Log "Control Center ready. Normal use is 'Install / Update App'; the tracker process is auto-managed by the scheduled task."
 
 [void]$form.ShowDialog()

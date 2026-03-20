@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$scriptPath = $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $exePath = Join-Path $projectRoot "dist\cclms-tracker.exe"
 $configPath = Join-Path $projectRoot "config.json"
@@ -52,6 +53,33 @@ function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Ensure-ElevatedInstall {
+    param(
+        [string]$Mode,
+        [string]$TaskName,
+        [string]$RequestedNssmPath
+    )
+
+    if (Test-IsAdministrator) {
+        return
+    }
+
+    $argumentList = @(
+        "-ExecutionPolicy", "Bypass",
+        "-File", ('"{0}"' -f $scriptPath),
+        "-InstallMode", $Mode,
+        "-ServiceName", ('"{0}"' -f $TaskName)
+    )
+
+    if (Has-Value $RequestedNssmPath) {
+        $argumentList += @("-NssmPath", ('"{0}"' -f $RequestedNssmPath))
+    }
+
+    Write-Host "Elevation required for tracker installation. Requesting Administrator approval..."
+    Start-Process powershell -Verb RunAs -ArgumentList $argumentList -WorkingDirectory $projectRoot | Out-Null
+    exit 0
 }
 
 function Ensure-DeviceId {
@@ -112,9 +140,7 @@ function Install-WithScheduledTask {
         [string]$WorkingDirectory
     )
 
-    if (-not (Test-IsAdministrator)) {
-        throw "Scheduled task installation requires an elevated PowerShell window. Reopen PowerShell as Administrator and rerun .\install_service.ps1 -InstallMode Task"
-    }
+    Ensure-ElevatedInstall -Mode "Task" -TaskName $TaskName -RequestedNssmPath $NssmPath
 
     $actionArgs = '"' + $ConfigFilePath + '"'
     $action = New-ScheduledTaskAction -Execute $ExecutablePath -Argument $actionArgs -WorkingDirectory $WorkingDirectory
@@ -154,9 +180,7 @@ function Install-WithNssm {
         [string]$WorkingDirectory
     )
 
-    if (-not (Test-IsAdministrator)) {
-        throw "Service installation requires an elevated PowerShell window. Reopen PowerShell as Administrator and rerun .\install_service.ps1 -InstallMode Service -NssmPath '<real path to nssm.exe>'"
-    }
+    Ensure-ElevatedInstall -Mode "Service" -TaskName $TaskName -RequestedNssmPath $ResolvedNssmPath
 
     & $ResolvedNssmPath status $TaskName | Out-Null
     $serviceExists = ($LASTEXITCODE -eq 0)
