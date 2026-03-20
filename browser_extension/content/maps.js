@@ -20,6 +20,38 @@
     return CCLMSCommon.normalizeWhitespace(node?.textContent || "");
   }
 
+  function extractRatingInfo() {
+    const texts = Array.from(document.querySelectorAll("span, button, div"))
+      .map((node) => CCLMSCommon.normalizeWhitespace(node.textContent || node.getAttribute("aria-label") || ""))
+      .filter(Boolean)
+      .slice(0, 300);
+
+    let googleRating = null;
+    let userRatingsTotal = null;
+    for (const text of texts) {
+      if (googleRating == null) {
+        const ratingMatch = text.match(/\b([1-5]\.\d)\b/);
+        if (ratingMatch) {
+          googleRating = Number(ratingMatch[1]);
+        }
+      }
+      if (userRatingsTotal == null) {
+        const reviewsMatch = text.match(/\b([\d,]+)\s+reviews?\b/i);
+        if (reviewsMatch) {
+          userRatingsTotal = Number(reviewsMatch[1].replace(/,/g, ""));
+        }
+      }
+      if (googleRating != null && userRatingsTotal != null) {
+        break;
+      }
+    }
+
+    return {
+      google_rating: Number.isFinite(googleRating) ? googleRating : null,
+      user_ratings_total: Number.isFinite(userRatingsTotal) ? userRatingsTotal : null
+    };
+  }
+
   function fullAddressCandidate(value) {
     const text = CCLMSCommon.normalizeWhitespace(value || "");
     if (!text) {
@@ -66,6 +98,7 @@
     const websiteButton = findButtonByDataItem("authority");
     const category = textFromSelector("button[jsaction*='pane.rating.category']");
     const openingHours = extractOpeningHours();
+    const ratingInfo = extractRatingInfo();
     const address = extractBestAddress(addressButton);
     const phone = CCLMSCommon.normalizeWhitespace(phoneButton?.textContent || "");
     const website = websiteButton?.getAttribute("href") || websiteButton?.textContent || "";
@@ -82,6 +115,8 @@
       website: CCLMSCommon.normalizeWhitespace(website),
       category,
       opening_hours: openingHours,
+      google_rating: ratingInfo.google_rating,
+      user_ratings_total: ratingInfo.user_ratings_total,
       coordinates,
       zip_code: locationParts.zip_code,
       city: locationParts.city,
