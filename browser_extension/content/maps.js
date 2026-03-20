@@ -203,12 +203,13 @@
       return;
     }
     const data = response.data?.message || response.data || {};
+    const openUrlValue = data.open_url || data.route || response.data?.open_url || response.data?.route;
     if (data.warning) {
       renderOverlay(place, currentValidation, data.warning);
       return;
     }
-    if (data.open_url) {
-      await openUrl(data.open_url);
+    if (openUrlValue) {
+      await openUrl(openUrlValue);
       return;
     }
     logContentEvent("prefill_lead_error", {
