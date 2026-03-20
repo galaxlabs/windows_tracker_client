@@ -83,7 +83,7 @@ function setCached(prefix, payload, value) {
   inMemoryCache.set(cacheKey(prefix, payload), { value, createdAt: Date.now() });
 }
 
-async function validatePlace(place) {
+async function validatePlace(place, options = {}) {
   const settings = await getSettings();
   const payload = {
     place,
@@ -93,7 +93,7 @@ async function validatePlace(place) {
       source: "google_maps_extension"
     }
   };
-  const cached = await getCached("validate", payload);
+  const cached = options.bypassCache ? null : await getCached("validate", payload);
   if (cached) {
     await logEvent("background", "validate_place_cache_hit", {
       fingerprint: place.place_fingerprint || "",
@@ -122,7 +122,7 @@ async function validatePlace(place) {
   return result;
 }
 
-async function getDecisionPanel(place) {
+async function getDecisionPanel(place, options = {}) {
   const settings = await getSettings();
   const payload = {
     place,
@@ -132,7 +132,7 @@ async function getDecisionPanel(place) {
       source: "google_maps_extension"
     }
   };
-  const cached = await getCached("decision-panel", payload);
+  const cached = options.bypassCache ? null : await getCached("decision-panel", payload);
   if (cached) {
     await logEvent("background", "decision_panel_cache_hit", {
       fingerprint: place.place_fingerprint || "",
@@ -189,7 +189,7 @@ async function prefillLead(place) {
   return result;
 }
 
-async function getLeadScope(place) {
+async function getLeadScope(place, options = {}) {
   const settings = await getSettings();
   const payload = {
     place,
@@ -197,7 +197,7 @@ async function getLeadScope(place) {
     employee: settings.employee || "",
     source_system: "google_maps_extension"
   };
-  const cached = await getCached("lead-scope", payload);
+  const cached = options.bypassCache ? null : await getCached("lead-scope", payload);
   if (cached) {
     return cached;
   }
@@ -211,7 +211,7 @@ async function getLeadScope(place) {
   return result;
 }
 
-async function getCompetitorScope(place) {
+async function getCompetitorScope(place, options = {}) {
   const settings = await getSettings();
   const payload = {
     place,
@@ -219,7 +219,7 @@ async function getCompetitorScope(place) {
     employee: settings.employee || "",
     source_system: "google_maps_extension"
   };
-  const cached = await getCached("competitor-scope", payload);
+  const cached = options.bypassCache ? null : await getCached("competitor-scope", payload);
   if (cached) {
     return cached;
   }
@@ -289,11 +289,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       if (message.type === "VALIDATE_PLACE") {
-        sendResponse({ ok: true, data: await validatePlace(message.place || {}) });
+        sendResponse({ ok: true, data: await validatePlace(message.place || {}, { bypassCache: Boolean(message.bypassCache) }) });
         return;
       }
       if (message.type === "GET_DECISION_PANEL") {
-        sendResponse({ ok: true, data: await getDecisionPanel(message.place || {}) });
+        sendResponse({ ok: true, data: await getDecisionPanel(message.place || {}, { bypassCache: Boolean(message.bypassCache) }) });
         return;
       }
       if (message.type === "SAVE_COMPETITOR") {
@@ -305,11 +305,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       if (message.type === "GET_LEAD_SCOPE") {
-        sendResponse({ ok: true, data: await getLeadScope(message.place || {}) });
+        sendResponse({ ok: true, data: await getLeadScope(message.place || {}, { bypassCache: Boolean(message.bypassCache) }) });
         return;
       }
       if (message.type === "GET_COMPETITOR_SCOPE") {
-        sendResponse({ ok: true, data: await getCompetitorScope(message.place || {}) });
+        sendResponse({ ok: true, data: await getCompetitorScope(message.place || {}, { bypassCache: Boolean(message.bypassCache) }) });
         return;
       }
       if (message.type === "OPEN_URL") {

@@ -443,8 +443,8 @@
     await validateCurrentPlace(true);
   }
 
-  async function fetchLeadScope(place) {
-    const response = await sendMessage({ type: "GET_LEAD_SCOPE", place });
+  async function fetchLeadScope(place, bypassCache) {
+    const response = await sendMessage({ type: "GET_LEAD_SCOPE", place, bypassCache: Boolean(bypassCache) });
     if (!response?.ok) {
       return { leads: [], crm_base_url: "" };
     }
@@ -455,8 +455,8 @@
     };
   }
 
-  async function fetchCompetitorScope(place) {
-    const response = await sendMessage({ type: "GET_COMPETITOR_SCOPE", place });
+  async function fetchCompetitorScope(place, bypassCache) {
+    const response = await sendMessage({ type: "GET_COMPETITOR_SCOPE", place, bypassCache: Boolean(bypassCache) });
     if (!response?.ok) {
       return { competitors: [] };
     }
@@ -466,8 +466,8 @@
     };
   }
 
-  async function fetchDecisionPanel(place) {
-    const response = await sendMessage({ type: "GET_DECISION_PANEL", place });
+  async function fetchDecisionPanel(place, bypassCache) {
+    const response = await sendMessage({ type: "GET_DECISION_PANEL", place, bypassCache: Boolean(bypassCache) });
     if (!response?.ok) {
       return null;
     }
@@ -503,9 +503,9 @@
     currentFingerprint = fingerprint;
     currentDecisionPanel = null;
     renderOverlay(place, null, null);
-    const leadScope = await fetchLeadScope(place);
-    const competitorScope = await fetchCompetitorScope(place);
-    const response = await sendMessage({ type: "VALIDATE_PLACE", place });
+    const leadScope = await fetchLeadScope(place, forceRefresh);
+    const competitorScope = await fetchCompetitorScope(place, forceRefresh);
+    const response = await sendMessage({ type: "VALIDATE_PLACE", place, bypassCache: Boolean(forceRefresh) });
     if (!response?.ok) {
       logContentEvent("validate_place_error", {
         error: response?.error || "unknown",
@@ -522,9 +522,15 @@
     const validationMessage = currentValidation?.message || currentValidation || {};
     validationMessage.scope_leads = leadScope.leads || [];
     validationMessage.competitor_scope = competitorScope.competitors || [];
-    const needsDecisionFallback = !validationMessage.control_panel || !validationMessage.prefill || !(validationMessage.prefill.zip_code || place.zip_code);
+    const aiInfo = ((validationMessage.control_panel || {}).ai || {});
+    const needsDecisionFallback = (
+      !validationMessage.control_panel ||
+      !validationMessage.prefill ||
+      !(validationMessage.prefill.zip_code || place.zip_code) ||
+      (!aiInfo.available && !aiInfo.reason)
+    );
     if (needsDecisionFallback) {
-      const fallbackPanel = await fetchDecisionPanel(place);
+      const fallbackPanel = await fetchDecisionPanel(place, forceRefresh);
       if (fallbackPanel?.message?.control_panel || fallbackPanel?.message?.prefill) {
         currentDecisionPanel = fallbackPanel;
         if (!validationMessage.control_panel && fallbackPanel.message.control_panel) {
