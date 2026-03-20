@@ -2,6 +2,7 @@
   const OVERLAY_ID = "cclms-map-overlay";
   const LEAD_LAYER_EVENT = "CCLMS_RENDER_LEAD_LAYER";
   const LEAD_LAYER_SCRIPT_ID = "cclms-lead-layer-bridge";
+  const BUILD_LABEL = "v0.1.2";
   let currentFingerprint = null;
   let currentValidation = null;
   let currentDecisionPanel = null;
@@ -163,7 +164,7 @@
     root.id = OVERLAY_ID;
     root.innerHTML = `
       <div class="cclms-card cclms-card--idle">
-        <div class="cclms-title">CCLMS</div>
+        <div class="cclms-title">CCLMS <span style="opacity:0.65;font-size:11px;">${BUILD_LABEL}</span></div>
         <div class="cclms-body">Waiting for a Google Maps place...</div>
         <div class="cclms-actions"></div>
       </div>

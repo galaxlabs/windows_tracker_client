@@ -27,7 +27,7 @@ Expected request payload:
   "device_id": "WIN-LAPTOP-01",
   "machine_name": "WIN-LAPTOP-01",
   "windows_username": "aqn",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "time_utc": "2026-03-19 12:00:00",
   "queue_count": 0,
   "tracker_process_count": 1,

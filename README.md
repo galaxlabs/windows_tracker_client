@@ -179,7 +179,7 @@ Release workflow:
 Stable release workflow:
 
 1. Bump [version.py](/home/dg/dg-b/windows_tracker_client/version.py)
-2. Push a git tag like `v0.1.1`
+2. Push a git tag like `v0.1.2`
 3. GitHub Actions builds the Windows EXE
 4. The workflow publishes a stable tagged release with:
    - `cclms-tracker.exe`
@@ -196,14 +196,14 @@ Recommended push flow:
 
 ```bash
 git push origin main
-git push origin v0.1.1
+git push origin v0.1.2
 ```
 
 Important:
 
 - do not create or push a local `latest` tag manually
 - `latest` is managed automatically by GitHub Actions for rolling development builds
-- create only normal version tags locally, such as `v0.1.1`, `v0.1.2`, and so on
+- create only normal version tags locally, such as `v0.1.2`, `v0.1.3`, and so on
 
 Workflow file:
 
