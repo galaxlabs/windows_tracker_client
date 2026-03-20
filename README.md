@@ -192,6 +192,19 @@ Update behavior:
 - the installed client checks the `latest` tagged release first, then falls back to the latest stable GitHub release
 - clients update from built release assets, not from raw source code
 
+Recommended push flow:
+
+```bash
+git push origin main
+git push origin v0.1.1
+```
+
+Important:
+
+- do not create or push a local `latest` tag manually
+- `latest` is managed automatically by GitHub Actions for rolling development builds
+- create only normal version tags locally, such as `v0.1.1`, `v0.1.2`, and so on
+
 Workflow file:
 
 - [.github/workflows/release.yml](/home/dg/dg-b/windows_tracker_client/.github/workflows/release.yml)
