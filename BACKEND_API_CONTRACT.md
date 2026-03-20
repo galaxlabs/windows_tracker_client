@@ -464,7 +464,7 @@ Request:
   "device_id": "DEVICE-ID",
   "machine_name": "DESKTOP-01",
   "windows_username": "user",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "queue_count": 0,
   "process_count": 1,
   "dns_status": {

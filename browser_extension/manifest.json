@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CCLMS Map Assistant",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Lightweight Google Maps and Google Chat helper for CCLMS scouting workflows.",
   "permissions": [
     "storage",

@@ -2,7 +2,7 @@
   const OVERLAY_ID = "cclms-map-overlay";
   const LEAD_LAYER_EVENT = "CCLMS_RENDER_LEAD_LAYER";
   const LEAD_LAYER_SCRIPT_ID = "cclms-lead-layer-bridge";
-  const BUILD_LABEL = "v0.1.2";
+  const BUILD_LABEL = "v0.1.3";
   let currentFingerprint = null;
   let currentValidation = null;
   let currentDecisionPanel = null;
