@@ -2,9 +2,14 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -45,9 +50,39 @@ jobs:
           Copy-Item .\README.md .\release\
           Compress-Archive -Path .\release\* -DestinationPath .\dist\cclms-tracker-windows-x64.zip -Force
 
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "tag_name=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+            "release_name=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+            "prerelease=false" >> $env:GITHUB_OUTPUT
+            "make_latest=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "tag_name=latest" >> $env:GITHUB_OUTPUT
+            "release_name=Latest Development Build" >> $env:GITHUB_OUTPUT
+            "prerelease=true" >> $env:GITHUB_OUTPUT
+            "make_latest=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Delete existing rolling release assets
+        if: github.ref_type != 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes 2>$null
+          exit 0
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.make_latest }}
+          generate_release_notes: true
           files: |
             .\dist\cclms-tracker-windows-x64.zip
             .\dist\cclms-tracker.exe

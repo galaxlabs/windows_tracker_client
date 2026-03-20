@@ -74,14 +74,17 @@ If `config.json` is missing or incomplete, you can launch:
 
 - [setup_config.ps1](/home/dg/dg-b/windows_tracker_client/setup_config.ps1)
 
-It opens a small Windows dialog to collect:
+It opens a Windows setup dialog to collect:
 
 - CRM Base URL
 - API Key
 - API Secret
 - Device ID
+- GitHub release settings
+- notification, device-action, device-health, biometric, map, call-metadata, auto-update, and SSL toggles
+- poll/check intervals
 
-Only the values entered are saved, so blank values can still fall back to the embedded defaults.
+The UI now writes the common runtime options into `config.json`, so you do not need to keep editing hidden config keys after rebuilds.
 
 Do not put each employee user or employee ID into the local config anymore.
 The Windows client auto-detects:
@@ -168,12 +171,26 @@ How it works:
 
 Release workflow:
 
+1. Push to `main`
+2. GitHub Actions builds the Windows EXE automatically
+3. The workflow updates a rolling GitHub release tagged `latest`
+4. Installed clients can auto-update from that newest build
+
+Stable release workflow:
+
 1. Bump [version.py](/home/dg/dg-b/windows_tracker_client/version.py)
 2. Push a git tag like `v0.1.1`
 3. GitHub Actions builds the Windows EXE
-4. The workflow publishes:
+4. The workflow publishes a stable tagged release with:
    - `cclms-tracker.exe`
    - `cclms-tracker-windows-x64.zip`
+
+Update behavior:
+
+- branch pushes to `main` publish a rolling `latest` release for fast ongoing updates
+- tagged pushes publish stable versioned releases
+- the installed client checks the `latest` tagged release first, then falls back to the latest stable GitHub release
+- clients update from built release assets, not from raw source code
 
 Workflow file:
 
@@ -247,9 +264,12 @@ or double-click:
 tracker_control_center.bat
 ```
 
-This small UI uses [config.json](/c:/Users/AQN/data/windows_tracker_client_clean/config.json) as the single source of truth and can:
+This small UI uses `config.json` as the single source of truth and can:
 
 - edit and save tracker config
+- toggle notifications, device actions, health, biometric sync, map intelligence, call metadata, auto update, and SSL verification
+- edit poll/check intervals
+- choose install mode: `Task`, `Service`, or `Auto`
 - sync browser extension defaults from the same config
 - build the EXE
 - install or refresh the scheduled task

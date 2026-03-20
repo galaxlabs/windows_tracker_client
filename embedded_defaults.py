@@ -19,7 +19,7 @@ DEFAULT_CONFIG = {
     "device_health_poll_seconds": 300,
     "device_health_method": "cclms.api.desktop_tracker.report_device_health",
     "device_health_log_lines": 20,
-    "notifications_enabled": False,
+    "notifications_enabled": True,
     "notifications_poll_seconds": 60,
     "notifications_method": "cclms.api.desktop_tracker.get_device_notifications",
     "notifications_state_file": "notification_rules.json",

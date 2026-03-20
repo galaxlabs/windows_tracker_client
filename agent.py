@@ -853,22 +853,33 @@ class TrackerAgent:
         if not repo:
             return None
 
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
         headers = {"Accept": "application/vnd.github+json"}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        payload = response.json()
-        tag_name = payload.get("tag_name", "")
+        endpoints = [
+            f"https://api.github.com/repos/{repo}/releases/tags/latest",
+            f"https://api.github.com/repos/{repo}/releases/latest",
+        ]
 
-        for asset in payload.get("assets", []):
-            if asset.get("name") == asset_name:
-                return {
-                    "version": tag_name,
-                    "asset_url": asset.get("browser_download_url"),
-                    "asset_name": asset_name,
-                }
+        last_error = None
+        for url in endpoints:
+            try:
+                response = requests.get(url, headers=headers, timeout=15)
+                response.raise_for_status()
+                payload = response.json()
+                tag_name = payload.get("tag_name", "")
 
-        raise RuntimeError(f"Latest GitHub release does not contain asset '{asset_name}'")
+                for asset in payload.get("assets", []):
+                    if asset.get("name") == asset_name:
+                        return {
+                            "version": tag_name,
+                            "asset_url": asset.get("browser_download_url"),
+                            "asset_name": asset_name,
+                        }
+            except Exception as exc:
+                last_error = exc
+
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"No GitHub release contains asset '{asset_name}'")
 
     def _updater_script_contents(self):
         return r"""

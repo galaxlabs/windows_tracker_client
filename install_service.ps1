@@ -2,7 +2,7 @@ param(
     [string]$ServiceName = "CCLMS-Tracker",
     [string]$NssmPath = "C:\nssm\nssm.exe",
     [ValidateSet("Auto", "Task", "Service")]
-    [string]$InstallMode = "Auto"
+    [string]$InstallMode = "Task"
 )
 
 $ErrorActionPreference = "Stop"
