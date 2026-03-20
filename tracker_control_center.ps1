@@ -94,8 +94,8 @@ $fields = @(
     @{ Label = "API Key"; Name = "api_key"; X = 450; Y = 110; Width = 400 },
     @{ Label = "API Secret"; Name = "api_secret"; X = 20; Y = 180; Width = 400; Secret = $true },
     @{ Label = "Device ID"; Name = "device_id"; X = 450; Y = 180; Width = 400 },
-    @{ Label = "GitHub Repo"; Name = "github_repo"; X = 20; Y = 250; Width = 400 },
-    @{ Label = "GitHub Asset"; Name = "github_release_asset"; X = 450; Y = 250; Width = 400 }
+    @{ Label = "GitHub Repo"; Name = "github_repo"; X = 20; Y = 250; Width = 400; Default = "galaxlabs/windows_tracker_client" },
+    @{ Label = "GitHub Asset"; Name = "github_release_asset"; X = 450; Y = 250; Width = 400; Default = "cclms-tracker-windows-x64.zip" }
 )
 
 $numberFields = @(

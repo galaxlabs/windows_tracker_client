@@ -1,15 +1,17 @@
 {
-  "site_url": "https://your-crm.example.com",
-  "api_key": "your-api-key",
-  "api_secret": "your-api-secret",
+  "site_url": "https://crm.galaxylabs.online",
+  "api_key": "TRACKER_SERVICE_API_KEY",
+  "api_secret": "TRACKER_SERVICE_API_SECRET",
   "device_id": "WIN-LAPTOP-01",
-  "github_repo": "your-org/windows_tracker_client",
+  "github_repo": "galaxlabs/windows_tracker_client",
   "github_release_asset": "cclms-tracker-windows-x64.zip",
   "auto_update_enabled": true,
+  "auto_update_check_minutes": 360,
   "device_actions_enabled": false,
   "device_health_enabled": false,
   "notifications_enabled": true,
   "map_intelligence_enabled": false,
   "biometric_sync_enabled": false,
-  "call_metadata_enabled": true
+  "call_metadata_enabled": true,
+  "verify_ssl": true
 }

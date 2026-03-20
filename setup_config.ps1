@@ -87,7 +87,7 @@ $textFields = @(
     @{ Label = "API Key"; Name = "api_key"; Help = "Leave blank to use embedded default."; Secret = $false; Default = "" },
     @{ Label = "API Secret"; Name = "api_secret"; Help = "Leave blank to use embedded default."; Secret = $true; Default = "" },
     @{ Label = "Device ID"; Name = "device_id"; Help = "Recommended: laptop hostname."; Secret = $false; Default = $env:COMPUTERNAME },
-    @{ Label = "GitHub Repo"; Name = "github_repo"; Help = "Optional release repo override."; Secret = $false; Default = "" },
+    @{ Label = "GitHub Repo"; Name = "github_repo"; Help = "Optional release repo override."; Secret = $false; Default = "galaxlabs/windows_tracker_client" },
     @{ Label = "GitHub Asset"; Name = "github_release_asset"; Help = "Optional release asset override."; Secret = $false; Default = "cclms-tracker-windows-x64.zip" }
 )
 

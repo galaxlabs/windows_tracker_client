@@ -41,7 +41,7 @@ Set these before building:
 - `site_url`
 - `api_key`
 - `api_secret`
-- `github_repo` for auto updates, for example `your-org/windows_tracker_client`
+- `github_repo` for auto updates, default: `galaxlabs/windows_tracker_client`
 
 This means the installed client can work without asking each user to type those values.
 
@@ -64,7 +64,7 @@ You can also override update settings locally, for example:
 ```json
 {
   "device_id": "WIN-LAPTOP-01",
-  "github_repo": "your-org/windows_tracker_client",
+  "github_repo": "galaxlabs/windows_tracker_client",
   "github_release_asset": "cclms-tracker-windows-x64.zip",
   "auto_update_enabled": true
 }
@@ -146,7 +146,7 @@ The project now supports update checks against GitHub Releases when running as t
 
 Set these values in `embedded_defaults.py` or `config.json`:
 
-- `github_repo` for example `your-org/windows_tracker_client`
+- `github_repo` default: `galaxlabs/windows_tracker_client`
 - `github_release_asset` default: `cclms-tracker-windows-x64.zip`
 - `auto_update_enabled` default: `true`
 - `auto_update_check_minutes` default: `360`
