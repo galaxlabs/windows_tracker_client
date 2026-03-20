@@ -66,11 +66,10 @@
 
   function extractLocationParts(address) {
     const text = CCLMSCommon.normalizeWhitespace(address);
-    const zipMatch = text.match(/\b(\d{5})(?:-\d{4})?\b/);
     const stateZipMatch = text.match(/\b([A-Z]{2})\s+(\d{5})(?:-\d{4})?\b/);
     const cityStateZipMatch = text.match(/,\s*([^,]+),\s*([A-Z]{2})\s+\d{5}(?:-\d{4})?/);
     return {
-      zip_code: zipMatch ? zipMatch[1] : "",
+      zip_code: stateZipMatch ? stateZipMatch[2] : "",
       state: stateZipMatch ? stateZipMatch[1] : "",
       city: cityStateZipMatch ? CCLMSCommon.normalizeWhitespace(cityStateZipMatch[1]) : ""
     };
@@ -212,20 +211,12 @@
       await openUrl(data.open_url);
       return;
     }
-    const query = new URLSearchParams({
-      business_name: place.business_name || place.name || "",
-      address: place.address || "",
-      city: place.city || "",
-      zip_code: place.zip_code || "",
-      state: place.state || "",
-      phone: place.phone || "",
-      website: place.website || "",
-      business_type: place.category || "",
-      latitude: place.coordinates?.lat || "",
-      longitude: place.coordinates?.lng || "",
-      source: "Google Maps"
+    logContentEvent("prefill_lead_error", {
+      error: "Backend did not return open_url for ATM Lead prefill",
+      name: place.business_name || place.name || "",
+      zip_code: place.zip_code || ""
     });
-    await openUrl(`${data.crm_base_url || ""}/app/atm-lead/new-atm-lead-1?${query.toString()}`);
+    renderOverlay(place, currentValidation, "CRM did not return a valid ATM Lead creation URL.");
   }
 
   async function saveCompetitor(place) {

@@ -112,11 +112,17 @@ Response:
 ```json
 {
   "message": {
-    "open_url": "https://crm.example.com/app/atm-lead/new-atm-lead-1?prefill_token=abc123",
-    "crm_base_url": "https://crm.example.com"
+    "open_url": "https://crm.example.com/app/atm-leads/new-atm-leads-srltkcnnxj?prefill_token=abc123"
   }
 }
 ```
+
+Important:
+
+- backend must return the exact Frappe route in `open_url`
+- the extension should not guess the doctype route
+- this is required because your CRM may use dynamic/new-document routes
+- backend should also enforce create permission before returning `open_url`
 
 If duplicate blocks creation:
 
@@ -128,6 +134,15 @@ If duplicate blocks creation:
   }
 }
 ```
+
+Recommended backend behavior:
+
+- if user can create ATM Leads:
+  - return `open_url`
+- if user cannot create ATM Leads:
+  - return `warning`
+- if duplicate exists:
+  - return `warning` and `open_existing_lead_url`
 
 ## 3. Competitor Upsert Endpoint
 
