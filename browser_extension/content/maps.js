@@ -452,17 +452,32 @@
     const validationMessage = currentValidation?.message || currentValidation || {};
     validationMessage.scope_leads = leadScope.leads || [];
     validationMessage.competitor_scope = competitorScope.competitors || [];
+    const needsDecisionFallback = !validationMessage.control_panel || !validationMessage.prefill || !(validationMessage.prefill.zip_code || place.zip_code);
+    if (needsDecisionFallback) {
+      const fallbackPanel = await fetchDecisionPanel(place);
+      if (fallbackPanel?.message?.control_panel || fallbackPanel?.message?.prefill) {
+        currentDecisionPanel = fallbackPanel;
+        if (!validationMessage.control_panel && fallbackPanel.message.control_panel) {
+          validationMessage.control_panel = fallbackPanel.message.control_panel;
+        }
+        if (!validationMessage.prefill && fallbackPanel.message.prefill) {
+          validationMessage.prefill = fallbackPanel.message.prefill;
+        }
+      }
+    }
     if (currentValidation?.message) {
       currentValidation.message = validationMessage;
     } else {
       currentValidation = validationMessage;
     }
-    currentDecisionPanel = {
-      message: {
-        prefill: validationMessage.prefill || {},
-        control_panel: validationMessage.control_panel || {}
-      }
-    };
+    if (!currentDecisionPanel) {
+      currentDecisionPanel = {
+        message: {
+          prefill: validationMessage.prefill || {},
+          control_panel: validationMessage.control_panel || {}
+        }
+      };
+    }
     const crmBaseUrl = String(leadScope.crm_base_url || "").replace(/\/+$/, "");
     const layerPayload = {
       leads: (leadScope.leads || []).map((row) => ({
