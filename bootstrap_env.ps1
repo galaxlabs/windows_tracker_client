@@ -58,6 +58,28 @@ function Ensure-Pip {
     }
 }
 
+function Test-DependencySetAvailable {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonPath
+    )
+
+    $script = @"
+import importlib
+required = ["psutil", "requests", "win32gui", "PIL"]
+missing = []
+for name in required:
+    try:
+        importlib.import_module(name)
+    except Exception:
+        missing.append(name)
+if missing:
+    raise SystemExit("missing:" + ",".join(missing))
+"@
+
+    & $PythonPath -c $script | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Get-FileHashString {
     param([Parameter(Mandatory = $true)][string[]]$Paths)
 
@@ -131,8 +153,6 @@ function Initialize-TrackerVenv {
     }
 
     if ($currentHash -ne $storedHash) {
-        Invoke-ExternalCommand -Executable $pythonPath -Arguments @("-m", "pip", "install", "--upgrade", "pip") -FailureMessage "Failed to upgrade pip in the tracker virtual environment."
-
         $installArgs = @("-m", "pip", "install")
         foreach ($file in $RequirementsFiles) {
             if (Test-Path -LiteralPath $file) {
@@ -140,7 +160,15 @@ function Initialize-TrackerVenv {
             }
         }
 
-        Invoke-ExternalCommand -Executable $pythonPath -Arguments $installArgs -FailureMessage "Failed to install tracker dependencies."
+        try {
+            Invoke-ExternalCommand -Executable $pythonPath -Arguments $installArgs -FailureMessage "Failed to install tracker dependencies."
+        } catch {
+            Write-Warning "Dependency install failed. Checking whether existing packages are already sufficient."
+            if (-not (Test-DependencySetAvailable -PythonPath $pythonPath)) {
+                throw
+            }
+            Write-Warning "Continuing with the existing virtual environment packages because required build dependencies are already available."
+        }
         Set-Content -LiteralPath $stampPath -Value $currentHash -Encoding UTF8
     }
 
