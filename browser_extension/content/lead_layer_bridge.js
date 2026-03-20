@@ -1,11 +1,14 @@
 (() => {
   const EVENT_NAME = "CCLMS_RENDER_LEAD_LAYER";
   let markers = [];
+  let circles = [];
   let infoWindow = null;
 
-  function clearMarkers() {
+  function clearLayers() {
     markers.forEach((marker) => marker.setMap(null));
     markers = [];
+    circles.forEach((circle) => circle.setMap(null));
+    circles = [];
   }
 
   function iconForState(workflowState) {
@@ -28,21 +31,23 @@
     };
   }
 
-  function render(payload) {
-    if (!window.google || !google.maps) {
-      return;
-    }
-    const mapElement = document.querySelector("#scene, [role='main'] .widget-scene");
-    const map = mapElement && mapElement.__gm ? mapElement.__gm.map : null;
-    if (!map) {
-      return;
-    }
-    clearMarkers();
-    const rows = Array.isArray(payload?.leads) ? payload.leads : [];
-    if (!rows.length) {
-      return;
-    }
-    infoWindow = infoWindow || new google.maps.InfoWindow();
+  function addRadiusCircle(map, lat, lng, color) {
+    const circle = new google.maps.Circle({
+      map,
+      center: { lat, lng },
+      radius: 1609.34,
+      strokeColor: color,
+      strokeOpacity: 0.35,
+      strokeWeight: 1.5,
+      fillColor: color,
+      fillOpacity: 0.06
+    });
+    circles.push(circle);
+  }
+
+  function renderRows(map, rows, kind) {
+    const markerColor = kind === "competitor" ? "#b91c1c" : "#2563eb";
+    const circleColor = kind === "competitor" ? "#ef4444" : "#3b82f6";
     rows.forEach((row) => {
       const lat = Number(row.latitude);
       const lng = Number(row.longitude);
@@ -52,15 +57,24 @@
       const marker = new google.maps.Marker({
         position: { lat, lng },
         map,
-        title: row.business_name || row.atm_lead_name || "ATM Lead",
-        icon: iconForState(row.workflow_state)
+        title: row.business_name || row.name || row.atm_lead_name || "ATM Lead",
+        icon: kind === "competitor" ? {
+          path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+          fillColor: markerColor,
+          fillOpacity: 0.9,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 5
+        } : iconForState(row.workflow_state)
       });
+      addRadiusCircle(map, lat, lng, circleColor);
       marker.addListener("click", () => {
         const route = row.open_url || "";
         const html = [
           '<div style="min-width:220px;line-height:1.4;">',
-          '<strong>' + String(row.business_name || row.atm_lead_name || "ATM Lead") + '</strong><br>',
+          '<strong>' + String(row.business_name || row.name || row.atm_lead_name || "Map Location") + '</strong><br>',
           row.address ? String(row.address) + '<br>' : '',
+          kind === "competitor" ? 'Type: Competitor Kiosk<br>' : '',
           row.workflow_state ? 'State: ' + String(row.workflow_state) + '<br>' : '',
           route ? '<a href="' + route + '" target="_blank" rel="noopener">Open CRM Lead</a>' : '',
           '</div>'
@@ -70,6 +84,26 @@
       });
       markers.push(marker);
     });
+  }
+
+  function render(payload) {
+    if (!window.google || !google.maps) {
+      return;
+    }
+    const mapElement = document.querySelector("#scene, [role='main'] .widget-scene");
+    const map = mapElement && mapElement.__gm ? mapElement.__gm.map : null;
+    if (!map) {
+      return;
+    }
+    clearLayers();
+    const leadRows = Array.isArray(payload?.leads) ? payload.leads : [];
+    const competitorRows = Array.isArray(payload?.competitors) ? payload.competitors : [];
+    if (!leadRows.length && !competitorRows.length) {
+      return;
+    }
+    infoWindow = infoWindow || new google.maps.InfoWindow();
+    renderRows(map, leadRows, "lead");
+    renderRows(map, competitorRows, "competitor");
   }
 
   window.addEventListener(EVENT_NAME, (event) => {

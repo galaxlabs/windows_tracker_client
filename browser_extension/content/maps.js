@@ -155,6 +155,8 @@
     const panelZip = panel.zip || {};
     const panelLeadScope = panel.lead_scope || {};
     const panelAi = panel.ai || {};
+    const panelMetrics = panel.metrics || {};
+    const decisionCopy = panel.decision_copy || "";
     const zipSummaryText = panelZip.summary?.suggestion || "";
     const existingLeadCount = Array.isArray(info.scope_leads) ? info.scope_leads.length : 0;
     const zoneColor = (info.zone_color || info.status_color || "yellow").toLowerCase();
@@ -195,6 +197,17 @@
             <div style="font-size:11px;margin-top:4px;">Score: ${escapeHtml(String(panelZip.zip_score ?? info.zip_score ?? ""))}</div>
           </div>
         </div>
+        ${decisionCopy ? `<div style="font-size:12px;padding:8px;border-left:3px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.04);">${escapeHtml(decisionCopy)}</div>` : ""}
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+          <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
+            <div style="font-size:11px;opacity:0.8;">Nearest Bitcoin Depot</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(panelMetrics.nearest_company_miles == null ? "No nearby record" : `${panelMetrics.nearest_company_miles} mi`)}</div>
+          </div>
+          <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
+            <div style="font-size:11px;opacity:0.8;">Nearest Competitor</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(panelMetrics.nearest_competitor_miles == null ? "No nearby record" : `${panelMetrics.nearest_competitor_miles} mi`)}</div>
+          </div>
+        </div>
         ${zipSummaryText ? `<div style="font-size:12px;padding:8px;border-left:3px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.04);">${escapeHtml(zipSummaryText)}</div>` : ""}
         <div>
           <div style="font-size:12px;font-weight:700;opacity:0.9;">AI Summary</div>
@@ -210,8 +223,17 @@
     if (info.open_existing_lead_url) {
       actions.appendChild(actionButton("Open Existing Lead", () => openUrl(info.open_existing_lead_url)));
     }
-    if (canCreateLead(place)) {
-      actions.appendChild(actionButton("Create Prefilled ATM Lead", () => createPrefilledLead(place)));
+    if (canCreateLead(place) && !info.exists_in_atm_leads) {
+      let leadLabel = "Create Smart Lead Draft";
+      const zone = String(panelZip.zone_color || info.zone_color || "").toLowerCase();
+      const status = String(info.status || panelZip.status || "").toLowerCase();
+      const meetsDistance = panelMetrics.meets_distance_rule !== false;
+      if ((zone === "green" || zone === "light green" || zone === "light_green" || zone === "yellow") && meetsDistance) {
+        leadLabel = "Create Smart ATM Lead";
+      } else if (status === "avoid" || zone === "red") {
+        leadLabel = "Create Review Lead Draft";
+      }
+      actions.appendChild(actionButton(leadLabel, () => createPrefilledLead(place)));
     }
     actions.appendChild(actionButton("Save Competitor", () => saveCompetitor(place)));
     actions.appendChild(actionButton("Refresh Validation", () => validateCurrentPlace(true)));
@@ -321,6 +343,17 @@
     };
   }
 
+  async function fetchCompetitorScope(place) {
+    const response = await sendMessage({ type: "GET_COMPETITOR_SCOPE", place });
+    if (!response?.ok) {
+      return { competitors: [] };
+    }
+    const data = response.data?.message || response.data || {};
+    return {
+      competitors: Array.isArray(data.competitors) ? data.competitors : []
+    };
+  }
+
   async function fetchDecisionPanel(place) {
     const response = await sendMessage({ type: "GET_DECISION_PANEL", place });
     if (!response?.ok) {
@@ -359,6 +392,7 @@
     currentDecisionPanel = null;
     renderOverlay(place, null, null);
     const leadScope = await fetchLeadScope(place);
+    const competitorScope = await fetchCompetitorScope(place);
     currentDecisionPanel = await fetchDecisionPanel(place);
     const response = await sendMessage({ type: "VALIDATE_PLACE", place });
     if (!response?.ok) {
@@ -386,9 +420,13 @@
       leads: (leadScope.leads || []).map((row) => ({
         ...row,
         open_url: crmBaseUrl ? `${crmBaseUrl}/app/atm-leads/${row.atm_lead_name}` : ""
-      }))
+      })),
+      competitors: competitorScope.competitors || []
     };
-    const layerKey = JSON.stringify(layerPayload.leads.map((row) => [row.atm_lead_name, row.latitude, row.longitude, row.workflow_state]));
+    const layerKey = JSON.stringify({
+      leads: layerPayload.leads.map((row) => [row.atm_lead_name, row.latitude, row.longitude, row.workflow_state]),
+      competitors: layerPayload.competitors.map((row) => [row.crm_competitor_kiosk_name || row.name, row.latitude, row.longitude])
+    });
     if (forceRefresh || layerKey !== lastLeadLayerKey) {
       renderLeadLayer(layerPayload);
       lastLeadLayerKey = layerKey;

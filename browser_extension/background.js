@@ -12,6 +12,7 @@ const DEFAULTS = {
   competitorMethod: "cclms.api.browser_extension.upsert_competitor_kiosk",
   prefillMethod: "cclms.api.browser_extension.prefill_atm_lead_context",
   leadScopeMethod: "cclms.api.browser_extension.sync_lead_cache_scope",
+  competitorScopeMethod: "cclms.api.browser_extension.sync_competitor_cache_scope",
   notificationsMethod: "cclms.api.browser_extension.get_browser_notifications",
   ackNotificationMethod: "cclms.api.browser_extension.ack_browser_notification",
   cacheTtlSeconds: 180,
@@ -182,6 +183,23 @@ async function getLeadScope(place) {
   return result;
 }
 
+async function getCompetitorScope(place) {
+  const settings = await getSettings();
+  const payload = {
+    place,
+    device_id: settings.deviceId || "",
+    employee: settings.employee || "",
+    source_system: "google_maps_extension"
+  };
+  const cached = await getCached("competitor-scope", payload);
+  if (cached) {
+    return cached;
+  }
+  const result = await CCLMSApi.post(settings, settings.competitorScopeMethod, payload);
+  setCached("competitor-scope", payload, result);
+  return result;
+}
+
 async function getBrowserNotifications(pageContext) {
   const settings = await getSettings();
   if (!settings.chatEnabled) {
@@ -260,6 +278,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       if (message.type === "GET_LEAD_SCOPE") {
         sendResponse({ ok: true, data: await getLeadScope(message.place || {}) });
+        return;
+      }
+      if (message.type === "GET_COMPETITOR_SCOPE") {
+        sendResponse({ ok: true, data: await getCompetitorScope(message.place || {}) });
         return;
       }
       if (message.type === "OPEN_URL") {
