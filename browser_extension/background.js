@@ -30,6 +30,22 @@ if (typeof CCLMS_LOCAL_DEFAULTS === "object" && CCLMS_LOCAL_DEFAULTS) {
 
 const inMemoryCache = new Map();
 
+function summarizeAiFields(result) {
+  const message = result?.message || result || {};
+  const controlPanel = message.control_panel || {};
+  const ai = controlPanel.ai || {};
+  const prefill = message.prefill || {};
+  return {
+    zip_code: String(prefill.zip_code || controlPanel?.zip?.zip_code || message.zip_code || ""),
+    ai_available: Boolean(ai.available),
+    ai_reason: ai.reason || "",
+    ai_provider: ai.provider || "",
+    ai_has_raw_text: Boolean(ai.raw_text),
+    ai_has_summary: Boolean(ai.summary),
+    ai_model: ai.model || ""
+  };
+}
+
 async function logEvent(scope, event, details) {
   try {
     await CCLMSStorage.appendLog({
@@ -81,7 +97,8 @@ async function validatePlace(place) {
   if (cached) {
     await logEvent("background", "validate_place_cache_hit", {
       fingerprint: place.place_fingerprint || "",
-      name: place.name || ""
+      name: place.name || "",
+      ...summarizeAiFields(cached)
     });
     return cached;
   }
@@ -99,7 +116,8 @@ async function validatePlace(place) {
     name: place.business_name || place.name || "",
     zip_code: place.zip_code || "",
     city: place.city || "",
-    state: place.state || ""
+    state: place.state || "",
+    ...summarizeAiFields(result)
   });
   return result;
 }
@@ -116,10 +134,20 @@ async function getDecisionPanel(place) {
   };
   const cached = await getCached("decision-panel", payload);
   if (cached) {
+    await logEvent("background", "decision_panel_cache_hit", {
+      fingerprint: place.place_fingerprint || "",
+      name: place.business_name || place.name || "",
+      ...summarizeAiFields(cached)
+    });
     return cached;
   }
   const result = await CCLMSApi.post(settings, settings.decisionPanelMethod, payload);
   setCached("decision-panel", payload, result);
+  await logEvent("background", "decision_panel_success", {
+    fingerprint: place.place_fingerprint || "",
+    name: place.business_name || place.name || "",
+    ...summarizeAiFields(result)
+  });
   return result;
 }
 
