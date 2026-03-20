@@ -50,7 +50,7 @@
         "content/lead_layer_bridge.js"
       ],
       "matches": [
-        "https://www.google.com/maps/*"
+        "https://www.google.com/*"
       ]
     }
   ],
