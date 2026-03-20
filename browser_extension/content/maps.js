@@ -1,8 +1,11 @@
 (function () {
   const OVERLAY_ID = "cclms-map-overlay";
+  const LEAD_LAYER_EVENT = "CCLMS_RENDER_LEAD_LAYER";
+  const LEAD_LAYER_SCRIPT_ID = "cclms-lead-layer-bridge";
   let currentFingerprint = null;
   let currentValidation = null;
   let observer = null;
+  let lastLeadLayerKey = null;
 
   function findButtonByDataItem(dataItemPrefix) {
     return Array.from(document.querySelectorAll("button[data-item-id], a[data-item-id]")).find((node) =>
@@ -24,6 +27,7 @@
     const phoneButton = findButtonByDataItem("phone");
     const websiteButton = findButtonByDataItem("authority");
     const category = textFromSelector("button[jsaction*='pane.rating.category']");
+    const openingHours = extractOpeningHours();
     const address = CCLMSCommon.normalizeWhitespace(addressButton?.textContent || "");
     const phone = CCLMSCommon.normalizeWhitespace(phoneButton?.textContent || "");
     const website = websiteButton?.getAttribute("href") || websiteButton?.textContent || "";
@@ -39,6 +43,7 @@
       phone,
       website: CCLMSCommon.normalizeWhitespace(website),
       category,
+      opening_hours: openingHours,
       coordinates,
       zip_code: locationParts.zip_code,
       city: locationParts.city,
@@ -62,6 +67,34 @@
     };
     place.place_fingerprint = CCLMSCommon.fingerprint(place);
     return place;
+  }
+
+  function extractOpeningHours() {
+    const candidates = [];
+    const directNodes = document.querySelectorAll("[data-item-id^='oh'], button[aria-label*='Hours'], div[aria-label*='Hours']");
+    directNodes.forEach((node) => {
+      const text = CCLMSCommon.normalizeWhitespace(node.textContent || node.getAttribute("aria-label") || "");
+      if (text) {
+        candidates.push(text);
+      }
+    });
+
+    const rows = Array.from(document.querySelectorAll("table tr, [role='row']"))
+      .map((row) => CCLMSCommon.normalizeWhitespace(row.textContent || ""))
+      .filter((text) => /monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(text));
+    candidates.push(...rows);
+
+    const unique = [];
+    const seen = new Set();
+    for (const item of candidates) {
+      const value = CCLMSCommon.normalizeWhitespace(item);
+      if (!value || seen.has(value)) {
+        continue;
+      }
+      seen.add(value);
+      unique.push(value);
+    }
+    return unique.join("\n");
   }
 
   function extractLocationParts(address) {
@@ -117,6 +150,7 @@
     }
 
     const info = validation?.message || validation || {};
+    const existingLeadCount = Array.isArray(info.scope_leads) ? info.scope_leads.length : 0;
     const zoneColor = (info.zone_color || info.status_color || "yellow").toLowerCase();
     card.className = `cclms-card cclms-card--${mapColor(zoneColor)}`;
 
@@ -128,6 +162,7 @@
       info.zip_score !== undefined ? `ZIP score: ${escapeHtml(String(info.zip_score))}` : "",
       info.competitor_count !== undefined ? `Competitors: ${escapeHtml(String(info.competitor_count))}` : "",
       info.duplicate_reason ? `Duplicate: ${escapeHtml(info.duplicate_reason)}` : "",
+      existingLeadCount ? `Existing leads in view ZIP: ${escapeHtml(String(existingLeadCount))}` : "",
       info.recommendation ? `Action: ${escapeHtml(info.recommendation)}` : ""
     ].filter(Boolean);
     body.innerHTML = lines.join("<br>");
@@ -234,6 +269,116 @@
     await validateCurrentPlace(true);
   }
 
+  async function fetchLeadScope(place) {
+    const response = await sendMessage({ type: "GET_LEAD_SCOPE", place });
+    if (!response?.ok) {
+      return { leads: [], crm_base_url: "" };
+    }
+    const data = response.data?.message || response.data || {};
+    return {
+      leads: Array.isArray(data.leads) ? data.leads : [],
+      crm_base_url: data.crm_base_url || response.data?.crm_base_url || ""
+    };
+  }
+
+  function ensureLeadLayerBridge() {
+    if (document.getElementById(LEAD_LAYER_SCRIPT_ID)) {
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = LEAD_LAYER_SCRIPT_ID;
+    script.textContent = `
+      (() => {
+        const EVENT_NAME = ${JSON.stringify(LEAD_LAYER_EVENT)};
+        let markers = [];
+        let infoWindow = null;
+
+        function clearMarkers() {
+          markers.forEach((marker) => marker.setMap(null));
+          markers = [];
+        }
+
+        function iconForState(workflowState) {
+          const value = String(workflowState || "").toLowerCase();
+          let color = "#2563eb";
+          if (value.includes("approved") || value.includes("installed") || value.includes("signed") || value.includes("converted")) {
+            color = "#15803d";
+          } else if (value.includes("rejected") || value.includes("removed") || value.includes("cancelled")) {
+            color = "#b91c1c";
+          } else if (value.includes("pending") || value.includes("review")) {
+            color = "#b45309";
+          }
+          return {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: color,
+            fillOpacity: 0.9,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 7
+          };
+        }
+
+        function render(payload) {
+          if (!window.google || !google.maps) {
+            return;
+          }
+          const mapElement = document.querySelector("#scene, [role='main'] .widget-scene");
+          const map = mapElement && mapElement.__gm ? mapElement.__gm.map : null;
+          if (!map) {
+            return;
+          }
+          clearMarkers();
+          const rows = Array.isArray(payload?.leads) ? payload.leads : [];
+          if (!rows.length) {
+            return;
+          }
+          infoWindow = infoWindow || new google.maps.InfoWindow();
+          rows.forEach((row) => {
+            const lat = Number(row.latitude);
+            const lng = Number(row.longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+              return;
+            }
+            const marker = new google.maps.Marker({
+              position: { lat, lng },
+              map,
+              title: row.business_name || row.atm_lead_name || "ATM Lead",
+              icon: iconForState(row.workflow_state)
+            });
+            marker.addListener("click", () => {
+              const route = row.open_url || "";
+              const html = [
+                '<div style="min-width:220px;line-height:1.4;">',
+                '<strong>' + String(row.business_name || row.atm_lead_name || "ATM Lead") + '</strong><br>',
+                row.address ? String(row.address) + '<br>' : '',
+                row.workflow_state ? 'State: ' + String(row.workflow_state) + '<br>' : '',
+                route ? '<a href="' + route + '" target="_blank" rel="noopener">Open CRM Lead</a>' : '',
+                '</div>'
+              ].join('');
+              infoWindow.setContent(html);
+              infoWindow.open({ map, anchor: marker });
+            });
+            markers.push(marker);
+          });
+        }
+
+        window.addEventListener(EVENT_NAME, (event) => {
+          try {
+            render(event.detail || {});
+          } catch (error) {
+          }
+        });
+      })();
+    `;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
+  function renderLeadLayer(payload) {
+    ensureLeadLayerBridge();
+    window.dispatchEvent(new CustomEvent(LEAD_LAYER_EVENT, { detail: payload || {} }));
+  }
+
   async function validateCurrentPlace(forceRefresh) {
     const place = extractPlace();
     if (!place.business_name || !place.address) {
@@ -246,6 +391,7 @@
     }
     currentFingerprint = fingerprint;
     renderOverlay(place, null, null);
+    const leadScope = await fetchLeadScope(place);
     const response = await sendMessage({ type: "VALIDATE_PLACE", place });
     if (!response?.ok) {
       logContentEvent("validate_place_error", {
@@ -260,6 +406,25 @@
       return;
     }
     currentValidation = response.data;
+    const validationMessage = currentValidation?.message || currentValidation || {};
+    validationMessage.scope_leads = leadScope.leads || [];
+    if (currentValidation?.message) {
+      currentValidation.message = validationMessage;
+    } else {
+      currentValidation = validationMessage;
+    }
+    const crmBaseUrl = String(leadScope.crm_base_url || "").replace(/\/+$/, "");
+    const layerPayload = {
+      leads: (leadScope.leads || []).map((row) => ({
+        ...row,
+        open_url: crmBaseUrl ? `${crmBaseUrl}/app/atm-leads/${row.atm_lead_name}` : ""
+      }))
+    };
+    const layerKey = JSON.stringify(layerPayload.leads.map((row) => [row.atm_lead_name, row.latitude, row.longitude, row.workflow_state]));
+    if (forceRefresh || layerKey !== lastLeadLayerKey) {
+      renderLeadLayer(layerPayload);
+      lastLeadLayerKey = layerKey;
+    }
     logContentEvent("validate_place_success", {
       fingerprint,
       name: place.business_name || place.name || "",
@@ -283,5 +448,6 @@
   }
 
   startObservers();
+  ensureLeadLayerBridge();
   validateCurrentPlace(false);
 })();
