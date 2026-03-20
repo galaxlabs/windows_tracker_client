@@ -109,23 +109,44 @@
 
   function extractOpeningHours() {
     const candidates = [];
-    const directNodes = document.querySelectorAll("[data-item-id^='oh'], button[aria-label*='Hours'], div[aria-label*='Hours']");
-    directNodes.forEach((node) => {
-      const text = CCLMSCommon.normalizeWhitespace(node.textContent || node.getAttribute("aria-label") || "");
-      if (text) {
+    const pushCandidate = (value) => {
+      const text = String(value || "")
+        .replace(/\u202f/g, " ")
+        .replace(/\xa0/g, " ")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n");
+      if (text && /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(text)) {
         candidates.push(text);
       }
+    };
+    const directNodes = document.querySelectorAll("[data-item-id^='oh'], button[aria-label*='Hours'], div[aria-label*='Hours']");
+    directNodes.forEach((node) => {
+      pushCandidate(node.innerText || node.textContent || "");
+      pushCandidate(node.getAttribute("aria-label") || "");
     });
 
     const rows = Array.from(document.querySelectorAll("table tr, [role='row']"))
-      .map((row) => CCLMSCommon.normalizeWhitespace(row.textContent || ""))
+      .map((row) => {
+        const pieces = Array.from(row.querySelectorAll("td, th, div, span"))
+          .map((node) => String(node.innerText || node.textContent || "").trim())
+          .filter(Boolean);
+        if (pieces.length >= 2 && /monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(pieces[0])) {
+          return `${pieces[0]}\n${pieces.slice(1).join(" ")}`;
+        }
+        return String(row.innerText || row.textContent || "");
+      })
+      .map((text) => text.replace(/\u202f/g, " ").replace(/\xa0/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n"))
       .filter((text) => /monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(text));
     candidates.push(...rows);
 
     const unique = [];
     const seen = new Set();
     for (const item of candidates) {
-      const value = CCLMSCommon.normalizeWhitespace(item);
+      const value = item
+        .split("\n")
+        .map((line) => CCLMSCommon.normalizeWhitespace(line))
+        .filter(Boolean)
+        .join("\n");
       if (!value || seen.has(value)) {
         continue;
       }
