@@ -193,7 +193,7 @@
 
     const info = validation?.message || validation || {};
     const panel = currentDecisionPanel?.message?.control_panel || info.control_panel || {};
-    const resolvedPrefill = currentDecisionPanel?.message?.prefill || {};
+    const resolvedPrefill = currentDecisionPanel?.message?.prefill || info.prefill || {};
     const panelZip = panel.zip || {};
     const panelLeadScope = panel.lead_scope || {};
     const panelAi = panel.ai || {};
@@ -435,7 +435,6 @@
     renderOverlay(place, null, null);
     const leadScope = await fetchLeadScope(place);
     const competitorScope = await fetchCompetitorScope(place);
-    currentDecisionPanel = await fetchDecisionPanel(place);
     const response = await sendMessage({ type: "VALIDATE_PLACE", place });
     if (!response?.ok) {
       logContentEvent("validate_place_error", {
@@ -452,11 +451,18 @@
     currentValidation = response.data;
     const validationMessage = currentValidation?.message || currentValidation || {};
     validationMessage.scope_leads = leadScope.leads || [];
+    validationMessage.competitor_scope = competitorScope.competitors || [];
     if (currentValidation?.message) {
       currentValidation.message = validationMessage;
     } else {
       currentValidation = validationMessage;
     }
+    currentDecisionPanel = {
+      message: {
+        prefill: validationMessage.prefill || {},
+        control_panel: validationMessage.control_panel || {}
+      }
+    };
     const crmBaseUrl = String(leadScope.crm_base_url || "").replace(/\/+$/, "");
     const layerPayload = {
       leads: (leadScope.leads || []).map((row) => ({
