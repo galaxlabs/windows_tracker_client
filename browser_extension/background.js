@@ -8,6 +8,7 @@ importScripts("shared/storage.js", "shared/api.js");
 const DEFAULTS = {
   crmBaseUrl: "https://crm.galaxylabs.online",
   validateMethod: "cclms.api.browser_extension.validate_location_scope",
+  decisionPanelMethod: "cclms.api.browser_extension.get_map_decision_panel",
   competitorMethod: "cclms.api.browser_extension.upsert_competitor_kiosk",
   prefillMethod: "cclms.api.browser_extension.prefill_atm_lead_context",
   leadScopeMethod: "cclms.api.browser_extension.sync_lead_cache_scope",
@@ -99,6 +100,25 @@ async function validatePlace(place) {
     city: place.city || "",
     state: place.state || ""
   });
+  return result;
+}
+
+async function getDecisionPanel(place) {
+  const settings = await getSettings();
+  const payload = {
+    place,
+    device_id: settings.deviceId || "",
+    employee: settings.employee || "",
+    browser_context: {
+      source: "google_maps_extension"
+    }
+  };
+  const cached = await getCached("decision-panel", payload);
+  if (cached) {
+    return cached;
+  }
+  const result = await CCLMSApi.post(settings, settings.decisionPanelMethod, payload);
+  setCached("decision-panel", payload, result);
   return result;
 }
 
@@ -224,6 +244,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       if (message.type === "VALIDATE_PLACE") {
         sendResponse({ ok: true, data: await validatePlace(message.place || {}) });
+        return;
+      }
+      if (message.type === "GET_DECISION_PANEL") {
+        sendResponse({ ok: true, data: await getDecisionPanel(message.place || {}) });
         return;
       }
       if (message.type === "SAVE_COMPETITOR") {

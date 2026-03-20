@@ -4,6 +4,7 @@
   const LEAD_LAYER_SCRIPT_ID = "cclms-lead-layer-bridge";
   let currentFingerprint = null;
   let currentValidation = null;
+  let currentDecisionPanel = null;
   let observer = null;
   let lastLeadLayerKey = null;
 
@@ -150,22 +151,73 @@
     }
 
     const info = validation?.message || validation || {};
+    const panel = currentDecisionPanel?.message?.control_panel || info.control_panel || {};
+    const panelZip = panel.zip || {};
+    const panelLeadScope = panel.lead_scope || {};
+    const panelAi = panel.ai || {};
+    const zipSummaryText = panelZip.summary?.suggestion || "";
     const existingLeadCount = Array.isArray(info.scope_leads) ? info.scope_leads.length : 0;
     const zoneColor = (info.zone_color || info.status_color || "yellow").toLowerCase();
     card.className = `cclms-card cclms-card--${mapColor(zoneColor)}`;
 
-    const lines = [
-      `<strong>${escapeHtml(place.business_name || place.name)}</strong>`,
-      place.address ? escapeHtml(place.address) : "",
-      place.city || place.state || place.zip_code ? escapeHtml([place.city, place.state, place.zip_code].filter(Boolean).join(", ")) : "",
-      info.exists_in_atm_leads ? `Already exists: ${escapeHtml(info.workflow_state || "Existing")}` : "",
-      info.zip_score !== undefined ? `ZIP score: ${escapeHtml(String(info.zip_score))}` : "",
-      info.competitor_count !== undefined ? `Competitors: ${escapeHtml(String(info.competitor_count))}` : "",
-      info.duplicate_reason ? `Duplicate: ${escapeHtml(info.duplicate_reason)}` : "",
-      existingLeadCount ? `Existing leads in view ZIP: ${escapeHtml(String(existingLeadCount))}` : "",
-      info.recommendation ? `Action: ${escapeHtml(info.recommendation)}` : ""
-    ].filter(Boolean);
-    body.innerHTML = lines.join("<br>");
+    const leadRows = (panelLeadScope.leads || []).slice(0, 6).map((row) => {
+      const state = [row.city, row.state, row.zip_code].filter(Boolean).join(", ");
+      return `
+        <div style="padding:6px 0;border-top:1px solid rgba(255,255,255,0.08);">
+          <div style="font-weight:600;">${escapeHtml(row.business_name || row.atm_lead_name || "ATM Lead")}</div>
+          <div style="font-size:11px;opacity:0.86;">${escapeHtml(row.address || state || "")}</div>
+          <div style="font-size:11px;opacity:0.86;">${escapeHtml(row.workflow_state || "Draft")}</div>
+        </div>
+      `;
+    }).join("");
+
+    const aiBlock = panelAi.available && panelAi.raw_text
+      ? `<div style="margin-top:8px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);font-size:12px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(panelAi.raw_text)}</div>`
+      : `<div style="margin-top:8px;font-size:12px;opacity:0.82;">AI summary unavailable. ZIP analytics still shown below.</div>`;
+
+    body.innerHTML = `
+      <div style="display:grid;gap:10px;">
+        <div>
+          <div style="font-size:16px;font-weight:700;">${escapeHtml(place.business_name || place.name)}</div>
+          <div style="font-size:12px;opacity:0.86;">${escapeHtml(place.address || "")}</div>
+          <div style="font-size:12px;opacity:0.86;">${escapeHtml([place.city, place.state, place.zip_code].filter(Boolean).join(", "))}</div>
+          ${place.category ? `<div style="margin-top:4px;font-size:12px;">Type: ${escapeHtml(place.category)}</div>` : ""}
+          ${place.opening_hours ? `<div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">Hours: ${escapeHtml(place.opening_hours)}</div>` : ""}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+          <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
+            <div style="font-size:11px;opacity:0.8;">Decision</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(info.recommendation || panelZip.status || "Review")}</div>
+            ${info.duplicate_reason ? `<div style="font-size:11px;margin-top:4px;">${escapeHtml(info.duplicate_reason)}</div>` : ""}
+          </div>
+          <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
+            <div style="font-size:11px;opacity:0.8;">ZIP</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(String(panelZip.zip_code || place.zip_code || ""))} ${panelZip.zone_color ? `(${escapeHtml(panelZip.zone_color)})` : ""}</div>
+            <div style="font-size:11px;margin-top:4px;">Score: ${escapeHtml(String(panelZip.zip_score ?? info.zip_score ?? ""))}</div>
+          </div>
+          <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
+            <div style="font-size:11px;opacity:0.8;">Competition</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(String(panelZip.competitor_kiosks ?? info.competitor_count ?? 0))}</div>
+            <div style="font-size:11px;margin-top:4px;">Company kiosks: ${escapeHtml(String(panelZip.company_kiosks ?? 0))}</div>
+          </div>
+          <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
+            <div style="font-size:11px;opacity:0.8;">Data</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(String(panelLeadScope.count || existingLeadCount || 0))} leads</div>
+            <div style="font-size:11px;margin-top:4px;">Population: ${escapeHtml(String(panelZip.population ?? 0))}</div>
+          </div>
+        </div>
+        ${zipSummaryText ? `<div style="font-size:12px;padding:8px;border-left:3px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.04);">${escapeHtml(zipSummaryText)}</div>` : ""}
+        <div>
+          <div style="font-size:12px;font-weight:700;opacity:0.9;">AI Summary</div>
+          ${aiBlock}
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;opacity:0.9;">Existing ATM Leads In Scope</div>
+          ${leadRows || `<div style="font-size:12px;opacity:0.82;margin-top:6px;">No existing ATM Leads found in this ZIP scope.</div>`}
+        </div>
+        <div style="font-size:11px;opacity:0.72;">Foot traffic: not available in current CRM dataset.</div>
+      </div>
+    `;
 
     if (info.open_existing_lead_url) {
       actions.appendChild(actionButton("Open Existing Lead", () => openUrl(info.open_existing_lead_url)));
@@ -281,6 +333,14 @@
     };
   }
 
+  async function fetchDecisionPanel(place) {
+    const response = await sendMessage({ type: "GET_DECISION_PANEL", place });
+    if (!response?.ok) {
+      return null;
+    }
+    return response.data || null;
+  }
+
   function ensureLeadLayerBridge() {
     if (document.getElementById(LEAD_LAYER_SCRIPT_ID)) {
       return;
@@ -390,8 +450,10 @@
       return;
     }
     currentFingerprint = fingerprint;
+    currentDecisionPanel = null;
     renderOverlay(place, null, null);
     const leadScope = await fetchLeadScope(place);
+    currentDecisionPanel = await fetchDecisionPanel(place);
     const response = await sendMessage({ type: "VALIDATE_PLACE", place });
     if (!response?.ok) {
       logContentEvent("validate_place_error", {
