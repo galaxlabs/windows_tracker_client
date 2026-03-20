@@ -274,7 +274,19 @@
 
     const aiBlock = panelAi.available && panelAi.raw_text
       ? `<div style="margin-top:8px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);font-size:12px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(panelAi.raw_text)}</div>`
-      : `<div style="margin-top:8px;font-size:12px;opacity:0.82;">AI summary unavailable for this ZIP yet.</div>`;
+      : `<div style="margin-top:8px;font-size:12px;opacity:0.82;">AI summary unavailable for this ZIP yet.${panelAi.reason ? ` (${escapeHtml(panelAi.reason)})` : ""}</div>`;
+
+    const debugBlock = `
+      <div style="margin-top:8px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.05);font-size:11px;line-height:1.45;opacity:0.9;">
+        <div><strong>Debug</strong></div>
+        <div>Build: ${escapeHtml(BUILD_LABEL)}</div>
+        <div>ZIP sent: ${escapeHtml(String(resolvedPrefill.zip_code || place.zip_code || ""))}</div>
+        <div>Rating sent: ${escapeHtml(String(place.google_rating ?? "none"))}</div>
+        <div>Reviews sent: ${escapeHtml(String(place.user_ratings_total ?? "none"))}</div>
+        <div>AI available: ${escapeHtml(String(Boolean(panelAi.available)))}</div>
+        <div>AI reason: ${escapeHtml(panelAi.reason || "none")}</div>
+      </div>
+    `;
 
     body.innerHTML = `
       <div style="display:grid;gap:10px;">
@@ -311,6 +323,7 @@
         <div>
           <div style="font-size:12px;font-weight:700;opacity:0.9;">AI Summary</div>
           ${aiBlock}
+          ${debugBlock}
         </div>
         <div>
           <div style="font-size:12px;font-weight:700;opacity:0.9;">Existing ATM Leads In Scope (${escapeHtml(String(panelLeadScope.count || existingLeadCount || 0))})</div>
