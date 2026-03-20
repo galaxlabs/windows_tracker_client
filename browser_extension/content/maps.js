@@ -145,8 +145,13 @@
     };
   }
 
-  function canCreateLead(place) {
-    return Boolean(place?.business_name && place?.address && place?.zip_code);
+  function canCreateLead(place, resolvedPrefill) {
+    const prefill = resolvedPrefill || {};
+    return Boolean(
+      (prefill.business_name || place?.business_name) &&
+      (prefill.address || place?.address) &&
+      (prefill.zip_code || place?.zip_code)
+    );
   }
 
   function ensureOverlay() {
@@ -188,6 +193,7 @@
 
     const info = validation?.message || validation || {};
     const panel = currentDecisionPanel?.message?.control_panel || info.control_panel || {};
+    const resolvedPrefill = currentDecisionPanel?.message?.prefill || {};
     const panelZip = panel.zip || {};
     const panelLeadScope = panel.lead_scope || {};
     const panelAi = panel.ai || {};
@@ -217,8 +223,8 @@
       <div style="display:grid;gap:10px;">
         <div>
           <div style="font-size:16px;font-weight:700;">${escapeHtml(place.business_name || place.name)}</div>
-          <div style="font-size:12px;opacity:0.86;">${escapeHtml(place.address || "")}</div>
-          <div style="font-size:12px;opacity:0.86;">${escapeHtml([place.city, place.state, place.zip_code].filter(Boolean).join(", "))}</div>
+          <div style="font-size:12px;opacity:0.86;">${escapeHtml(resolvedPrefill.address || place.address || "")}</div>
+          <div style="font-size:12px;opacity:0.86;">${escapeHtml([resolvedPrefill.city || place.city, resolvedPrefill.state_code || place.state, resolvedPrefill.zip_code || place.zip_code].filter(Boolean).join(", "))}</div>
           ${place.category ? `<div style="margin-top:4px;font-size:12px;">Type: ${escapeHtml(place.category)}</div>` : ""}
         </div>
         <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
@@ -229,7 +235,7 @@
           </div>
           <div style="padding:8px;border-radius:10px;background:rgba(255,255,255,0.06);">
             <div style="font-size:11px;opacity:0.8;">ZIP</div>
-            <div style="font-size:14px;font-weight:700;">${escapeHtml(String(panelZip.zip_code || place.zip_code || ""))} ${panelZip.zone_color ? `(${escapeHtml(panelZip.zone_color)})` : ""}</div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(String(panelZip.zip_code || resolvedPrefill.zip_code || place.zip_code || ""))} ${panelZip.zone_color ? `(${escapeHtml(panelZip.zone_color)})` : ""}</div>
             <div style="font-size:11px;margin-top:4px;">Score: ${escapeHtml(String(panelZip.zip_score ?? info.zip_score ?? ""))}</div>
           </div>
         </div>
@@ -259,7 +265,7 @@
     if (info.open_existing_lead_url) {
       actions.appendChild(actionButton("Open Existing Lead", () => openUrl(info.open_existing_lead_url)));
     }
-    if (canCreateLead(place) && !info.exists_in_atm_leads) {
+    if (canCreateLead(place, resolvedPrefill) && !info.exists_in_atm_leads) {
       let leadLabel = "Create Smart Lead Draft";
       const zone = String(panelZip.zone_color || info.zone_color || "").toLowerCase();
       const status = String(info.status || panelZip.status || "").toLowerCase();
